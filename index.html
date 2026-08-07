@@ -188,6 +188,12 @@
   .splits-table th{text-align:left; color:var(--text-faint); font-weight:400; font-size:10px; text-transform:uppercase; letter-spacing:.06em; padding:4px 10px; border-bottom:1px solid var(--line-soft);}
   .splits-table td{padding:5px 10px; border-bottom:1px solid var(--line-soft); color:var(--text-dim);}
   .splits-table tr:last-child td{border-bottom:none; color:var(--text); font-weight:600;}
+  .split-input{
+    background:transparent; border:1px solid transparent; border-radius:5px; color:var(--text);
+    font-family:'JetBrains Mono',monospace; font-size:12px; padding:3px 6px; width:64px;
+  }
+  .split-input:hover{border-color:var(--line);}
+  .split-input:focus{outline:none; border-color:var(--z-lt1); background:var(--surface);}
 
   /* ---------- ZONE LEGEND ---------- */
   .zone-legend-cap{
@@ -440,11 +446,11 @@
     <div class="calc-row">
       <label for="calcGoal">Goal 10K time</label>
       <input id="calcGoal" class="calc-input" type="text" value="43:30" inputmode="numeric" autocomplete="off">
-      <span style="color:var(--text-faint); font-size:11px;">mm:ss</span>
+      <span style="color:var(--text-faint); font-size:11px;">mm:ss &mdash; sets even splits below; edit any row to customize</span>
     </div>
     <div class="calc-out">
-      <div><div class="co-num" id="calcPaceKm">4:21</div><div class="co-lbl">min / km</div></div>
-      <div><div class="co-num" id="calcPaceMi">7:00</div><div class="co-lbl">min / mile</div></div>
+      <div><div class="co-num" id="calcPaceKm">4:21</div><div class="co-lbl">avg min / km</div></div>
+      <div><div class="co-num" id="calcPaceMi">7:00</div><div class="co-lbl">avg min / mile</div></div>
     </div>
     <div class="calc-delta" id="calcDelta">Matches the plan's 43:30 goal pace.</div>
     <div class="splits-wrap">
@@ -752,7 +758,7 @@ weeks.forEach((w,i)=>{
   svg.appendChild(g);
 });
 
-// ---------- pace calculator ----------
+// ---------- pace calculator (editable per-km splits) ----------
 function parseGoalTime(str){
   const m = String(str).trim().match(/^(\d{1,3}):([0-5]\d)$/);
   if(!m) return null;
@@ -766,31 +772,75 @@ function fmtClock(totalSec){
   const ss = String(Math.min(s,59)).padStart(2,'0');
   return h>0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+function parseSplitPace(str){
+  const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
+  if(!m) return null;
+  return (+m[1])*60 + (+m[2]);
+}
+
 const calcGoalEl = document.getElementById('calcGoal');
-function recalcPace(){
-  const totalSec = parseGoalTime(calcGoalEl.value);
+const splitsTableEl = document.getElementById('splitsTable');
+let splits = Array(10).fill(GOAL_PACE_SEC); // seconds per km — each row editable independently
+
+function buildSplitsTable(){
+  let rows = '<tr><th>Km</th><th>Split</th><th>Cumulative</th></tr>';
+  for(let i=0;i<10;i++){
+    rows += `<tr><td>${i+1}</td><td><input class="split-input" type="text" inputmode="numeric" autocomplete="off" data-idx="${i}" value="${fmtPace(splits[i])}"></td><td id="cum-${i}"></td></tr>`;
+  }
+  splitsTableEl.innerHTML = rows;
+  updateCalcSummary();
+}
+
+function updateCalcSummary(){
+  let cum = 0;
+  for(let i=0;i<10;i++){
+    cum += splits[i];
+    const cell = document.getElementById('cum-'+i);
+    if(cell) cell.textContent = fmtClock(cum);
+  }
+  const total = cum;
+  const avgSec = total/10;
+  document.getElementById('calcPaceKm').textContent = fmtPace(avgSec)+'/km';
+  document.getElementById('calcPaceMi').textContent = fmtPace(avgSec*1.60934)+'/mi';
   const deltaEl = document.getElementById('calcDelta');
+  const deltaSec = total - GOAL_RACE_SECONDS;
+  const finishStr = fmtClock(total);
+  if(Math.abs(deltaSec) < 0.5){
+    deltaEl.textContent = `Projected finish ${finishStr} — matches the plan's 43:30 goal.`;
+  } else {
+    const sign = deltaSec > 0 ? '+' : '−';
+    deltaEl.textContent = `Projected finish ${finishStr} (${sign}${fmtClock(Math.abs(deltaSec))} vs. the plan's 43:30 goal).`;
+  }
+}
+
+function resetEvenSplits(){
+  const totalSec = parseGoalTime(calcGoalEl.value);
   if(totalSec==null){
-    deltaEl.textContent = 'Enter a time as mm:ss, e.g. 43:30.';
+    document.getElementById('calcDelta').textContent = 'Enter a time as mm:ss, e.g. 43:30.';
     return;
   }
-  const paceSec = totalSec/10;
-  document.getElementById('calcPaceKm').textContent = fmtPace(paceSec)+'/km';
-  document.getElementById('calcPaceMi').textContent = fmtPace(paceSec*1.60934)+'/mi';
-  const deltaSec = paceSec - GOAL_PACE_SEC;
-  if(Math.abs(deltaSec) < 0.5){
-    deltaEl.textContent = `Matches the plan's 43:30 goal pace.`;
-  } else {
-    deltaEl.textContent = `${deltaSec>0?'+':''}${deltaSec.toFixed(0)}s/km vs. the plan's 43:30 goal (${GOAL_PACE_STR}/km).`;
-  }
-  let rows = '<tr><th>Km</th><th>Split</th><th>Cumulative</th></tr>';
-  for(let k=1;k<=10;k++){
-    rows += `<tr><td>${k}</td><td>${fmtPace(paceSec)}</td><td>${fmtClock(paceSec*k)}</td></tr>`;
-  }
-  document.getElementById('splitsTable').innerHTML = rows;
+  splits = Array(10).fill(totalSec/10);
+  buildSplitsTable();
 }
-calcGoalEl.addEventListener('input', recalcPace);
-recalcPace();
+calcGoalEl.addEventListener('input', resetEvenSplits);
+
+splitsTableEl.addEventListener('input', (e)=>{
+  const el = e.target;
+  if(!el.classList || !el.classList.contains('split-input')) return;
+  const sec = parseSplitPace(el.value);
+  if(sec != null){
+    splits[+el.dataset.idx] = sec;
+    updateCalcSummary();
+  }
+});
+// snap back to the last valid value if a row is left blank/unparseable
+splitsTableEl.addEventListener('blur', (e)=>{
+  const el = e.target;
+  if(!el.classList || !el.classList.contains('split-input')) return;
+  el.value = fmtPace(splits[+el.dataset.idx]);
+}, true);
+
+buildSplitsTable();
 
 // ---------- run log (localStorage cache + optional Firestore sync) ----------
 const LOG_KEY = 'mc10k-plan-log-v4';
