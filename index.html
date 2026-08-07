@@ -140,6 +140,10 @@
   .checklist li{display:flex; gap:8px; align-items:flex-start;}
   .checklist li::before{content:"—"; color:var(--text-faint); flex:none;}
 
+  .insights-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:20px;}
+  @media (max-width:820px){.insights-grid{grid-template-columns:1fr;}}
+  .insights-grid .info-note{margin-top:0; font-size:12.5px; line-height:1.6;}
+
   /* ---------- SPARKLINE ---------- */
   .pulse-card{
     background:var(--surface);
@@ -301,6 +305,15 @@
     padding:2px 6px;
     border-radius:4px;
   }
+  .niggle-badge{
+    font-family:'JetBrains Mono',monospace;
+    font-size:9px; letter-spacing:.06em;
+    border:1px solid var(--z-power);
+    color:var(--z-power);
+    padding:2px 6px;
+    border-radius:4px;
+    display:none;
+  }
   .day-right{text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:2px;}
   .day-pace{font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:var(--z-lt1);}
   .day-hr{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-dim);}
@@ -325,11 +338,18 @@
   }
   .day-check:hover{border-color:var(--z-lt2);}
   .day-check.done{background:var(--z-lt2); border-color:var(--z-lt2);}
+  .day-right-actions{display:flex; gap:6px; margin-top:2px;}
   .log-toggle{
     background:transparent; border:1px solid var(--line); color:var(--text-faint);
-    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:3px 8px; border-radius:6px; cursor:pointer; margin-top:2px;
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:3px 8px; border-radius:6px; cursor:pointer;
   }
   .log-toggle:hover{color:var(--text); border-color:var(--z-lt1);}
+  .niggle-btn{
+    background:transparent; border:1px solid var(--line); color:var(--text-faint);
+    font-size:11px; padding:2px 7px; border-radius:6px; cursor:pointer; line-height:1.4;
+  }
+  .niggle-btn:hover{border-color:var(--z-power); color:var(--z-power);}
+  .niggle-btn.active{background:var(--z-power); border-color:var(--z-power); color:var(--ink);}
   .actual-summary{font-size:11px; font-family:'JetBrains Mono',monospace; margin-top:2px; flex-basis:100%; display:none;}
   .actual-summary.good{color:var(--z-lt2);}
   .actual-summary.amber{color:var(--z-power);}
@@ -377,7 +397,10 @@
 
   <div class="sync-bar" id="syncBar">
     <div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">Cloud sync not configured yet — log is saved on this device only.</span></div>
-    <button class="sync-btn" id="syncBtn" style="display:none;">Sign in with Google</button>
+    <div style="display:flex; gap:8px;">
+      <button class="sync-btn" id="calendarBtn">Download calendar (.ics)</button>
+      <button class="sync-btn" id="syncBtn" style="display:none;">Sign in with Google</button>
+    </div>
   </div>
 
   <div class="stat-strip">
@@ -393,6 +416,24 @@
       <div class="progress-figure" id="progressFigure">0 / 0 km logged</div>
     </div>
     <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="insights-grid">
+    <div class="info-card">
+      <h2>Coach note <span class="snap" id="coachNoteWeek"></span></h2>
+      <div class="info-note" id="coachNoteText">—</div>
+    </div>
+    <div class="info-card">
+      <h2>Fitness trend <span class="snap">rule-based, not a real predictor</span></h2>
+      <div class="info-row"><span class="k">Sessions w/ logged pace</span><span class="v" id="trendCount">0</span></div>
+      <div class="info-row"><span class="k">Avg vs. target pace</span><span class="v" id="trendRatio">—</span></div>
+      <div class="info-row"><span class="k">Projected 10K finish</span><span class="v" id="trendFinish">—</span></div>
+      <div class="info-note">Naive estimate: average of (actual &divide; target pace) across logged sessions, applied to the 43:30 goal pace. A trend signal, not a validated race predictor.</div>
+    </div>
+    <div class="info-card">
+      <h2>Niggle watch</h2>
+      <div class="info-note" id="niggleList">No niggles flagged — nice.</div>
+    </div>
   </div>
 
   <div class="zone-legend-cap">Pace &amp; pulse per zone <span>— pace from your RunZones profile, 6 Aug 2026</span></div>
@@ -413,6 +454,7 @@
       <div class="info-row"><span class="k">Course</span><span class="v">Flat towpath</span></div>
       <div class="info-row"><span class="k">Start time</span><span class="v tbc">TBC &mdash; not yet published</span></div>
       <div class="info-row"><span class="k">Registration / bib pickup</span><span class="v tbc">TBC &mdash; not yet published</span></div>
+      <div class="info-row"><span class="k">Forecast</span><span class="v" id="weatherValue">Opens up ~16 days before race day</span></div>
       <ul class="checklist">
         <li>Lay out kit + bib the night before</li>
         <li>Breakfast 2&ndash;3h out, familiar food only</li>
@@ -420,13 +462,14 @@
         <li>Race pace target <span id="raceChecklistPace">4:21</span>/km for the goal 43:30</li>
       </ul>
       <div class="info-note">Date, distances and organiser confirmed via JustRuns Events / running calendar listings as of 7 Aug 2026 &mdash; start time and registration weren't published yet. Check <a href="https://justrunsevents.ie/upcoming-events" target="_blank" rel="noopener">justrunsevents.ie</a> closer to race day.</div>
+      <div class="info-note" id="weatherAdvice" style="display:none; color:var(--z-power);"></div>
     </div>
     <div class="info-card">
-      <h2>Training status <span class="snap">COROS snapshot &middot; 7 Aug 2026</span></h2>
-      <div class="info-row"><span class="k">Recovery</span><span class="v">100% <span class="pill good">Heavy training OK</span></span></div>
-      <div class="info-row"><span class="k">Load ratio (7d/28d)</span><span class="v">1.04 <span class="pill good">Optimized</span></span></div>
-      <div class="info-row"><span class="k">Sleep HRV, last night</span><span class="v">71 ms <span class="pill good">Normal</span></span></div>
-      <div class="info-row"><span class="k">HRV baseline</span><span class="v">67 ms</span></div>
+      <h2>Training status <span class="snap">COROS snapshot &middot; <span id="tsSnapDate">7 Aug 2026</span></span></h2>
+      <div class="info-row"><span class="k">Recovery</span><span class="v"><span id="tsRecovery">100%</span> <span class="pill good" id="tsRecoveryPill">Heavy training OK</span></span></div>
+      <div class="info-row"><span class="k">Load ratio (7d/28d)</span><span class="v"><span id="tsLoad">1.04</span> <span class="pill good" id="tsLoadPill">Optimized</span></span></div>
+      <div class="info-row"><span class="k">Sleep HRV, last night</span><span class="v"><span id="tsHrv">71 ms</span> <span class="pill good" id="tsHrvPill">Normal</span></span></div>
+      <div class="info-row"><span class="k">HRV baseline</span><span class="v" id="tsHrvBaseline">67 ms</span></div>
       <div class="info-note">Static snapshot pulled from COROS on 7 Aug 2026, three days before Week 1 &mdash; this page can't call your watch live. Ask Claude to pull a fresh read before Build/Peak weeks or race week.</div>
     </div>
   </div>
@@ -550,6 +593,17 @@ function fmtPace(totalSec){
   return m+':'+(s<10?'0':'')+s;
 }
 const GOAL_PACE_STR = fmtPace(GOAL_PACE_SEC); // ≈4:21/km
+
+// COROS training-status snapshot — pulled 7 Aug 2026, three days before Week 1.
+// Single source of truth for both the Training Status card and the coach note
+// below; update this (and snapshotDate) when a fresher read is pulled.
+const TRAINING_STATUS = {
+  snapshotDate: '7 Aug 2026',
+  recoveryPct: 100, recoveryLabel: 'Heavy training OK', recoveryTier: 'good',
+  loadRatio: 1.04, loadLabel: 'Optimized', loadTier: 'good',
+  hrv: 71, hrvLabel: 'Normal', hrvTier: 'good',
+  hrvBaseline: 67,
+};
 
 // Active (non-retired) shoes from RunZones/COROS gear list — snapshot 7 Aug 2026.
 const ACTIVE_SHOES = [
@@ -699,6 +753,19 @@ if(diffDays > 0){
 }
 
 document.getElementById('raceChecklistPace').textContent = GOAL_PACE_STR;
+
+// ---------- training status card (driven by TRAINING_STATUS) ----------
+document.getElementById('tsSnapDate').textContent = TRAINING_STATUS.snapshotDate;
+document.getElementById('tsRecovery').textContent = TRAINING_STATUS.recoveryPct + '%';
+document.getElementById('tsRecoveryPill').textContent = TRAINING_STATUS.recoveryLabel;
+document.getElementById('tsRecoveryPill').className = 'pill ' + TRAINING_STATUS.recoveryTier;
+document.getElementById('tsLoad').textContent = TRAINING_STATUS.loadRatio.toFixed(2);
+document.getElementById('tsLoadPill').textContent = TRAINING_STATUS.loadLabel;
+document.getElementById('tsLoadPill').className = 'pill ' + TRAINING_STATUS.loadTier;
+document.getElementById('tsHrv').textContent = TRAINING_STATUS.hrv + ' ms';
+document.getElementById('tsHrvPill').textContent = TRAINING_STATUS.hrvLabel;
+document.getElementById('tsHrvPill').className = 'pill ' + TRAINING_STATUS.hrvTier;
+document.getElementById('tsHrvBaseline').textContent = TRAINING_STATUS.hrvBaseline + ' ms';
 
 // ---------- zone legend ----------
 const legendEl = document.getElementById('zoneLegend');
@@ -904,6 +971,7 @@ function toggleDone(key){
   renderDoneState(key);
   updateToggleLabel(key);
   updateProgress();
+  generateCoachNote();
 }
 function renderDoneState(key){
   const btn = document.querySelector('.day-check[data-key="'+key+'"]');
@@ -958,24 +1026,152 @@ function updateProgress(){
   document.getElementById('progressFill').style.width = pct.toFixed(1)+'%';
   document.getElementById('progressFigure').innerHTML = `<b>${fmtKm(doneKm)}</b> / ${fmtKm(grandTotal)} km logged <span style="color:var(--text-faint)">(${doneCount}/${totalCount} sessions · ${pct.toFixed(0)}%)</span>`;
 }
+// ---------- niggle flag ----------
+function toggleNiggle(key){
+  runLog[key] = runLog[key] || {};
+  runLog[key].niggle = !runLog[key].niggle;
+  if(!runLog[key].niggle && Object.keys(runLog[key]).length===1 && ('niggle' in runLog[key])) delete runLog[key];
+  saveLog();
+  renderNiggleState(key);
+  renderNiggleWatch();
+}
+function renderNiggleState(key){
+  const btn = document.querySelector('.niggle-btn[data-niggle="'+key+'"]');
+  const badge = document.querySelector('[data-niggle-badge="'+key+'"]');
+  const active = !!getEntry(key).niggle;
+  if(btn) btn.classList.toggle('active', active);
+  if(badge) badge.style.display = active ? 'inline-block' : 'none';
+}
+function renderNiggleWatch(){
+  const el = document.getElementById('niggleList');
+  if(!el) return;
+  const flagged = Object.keys(dayMeta).filter(k => getEntry(k).niggle).sort();
+  if(flagged.length===0){ el.textContent = 'No niggles flagged — nice.'; return; }
+  el.innerHTML = flagged.map(k=>{
+    const e = getEntry(k);
+    const label = new Date(k+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    return `<div style="margin-bottom:4px;"><b style="color:var(--z-power); font-family:'JetBrains Mono',monospace;">${label}</b>${e.note ? ' — '+e.note : ''}</div>`;
+  }).join('');
+}
+
+// ---------- coach note (rule-based, from this week's adherence + the COROS snapshot) ----------
+function currentWeekObj(){
+  const MS=86400000;
+  for(const w of weeks){
+    const start=new Date(w.start+'T00:00:00');
+    const end=new Date(start.getTime()+6*MS);
+    if(now>=start && now<=end) return w;
+  }
+  return null;
+}
+function generateCoachNote(){
+  const el = document.getElementById('coachNoteText');
+  const weekLbl = document.getElementById('coachNoteWeek');
+  if(!el || !weekLbl) return;
+  const w = currentWeekObj();
+  if(!w){
+    weekLbl.textContent = '';
+    el.textContent = now < new Date(weeks[0].start+'T00:00:00')
+      ? `Plan hasn't started yet — nothing to report until Week 1.`
+      : `Outside the plan's date range.`;
+    return;
+  }
+  weekLbl.textContent = `Week ${w.num} · ${w.phase}`;
+  let planned=0, done=0, plannedKm=0, doneKm=0;
+  w.days.forEach((day,i)=>{
+    const key = dateKeyFor(w.start, i);
+    const meta = dayMeta[key];
+    if(!meta) return;
+    planned++; plannedKm += meta.adjustedKm;
+    if(getEntry(key).done){ done++; doneKm += meta.adjustedKm; }
+  });
+  const adherencePct = planned>0 ? (done/planned)*100 : 0;
+  const { loadRatio, recoveryPct } = TRAINING_STATUS;
+  const lateInWeek = now.getDay()===0 || now.getDay()>=4; // Thu–Sun
+
+  let note;
+  if(recoveryPct < 70){
+    note = `Recovery read low in the last snapshot — treat this week's key sessions as optional and prioritise sleep over volume.`;
+  } else if(loadRatio > 1.15 && adherencePct >= 85){
+    note = `Load ratio's already elevated (${loadRatio.toFixed(2)}) and you're keeping up with the plan (${done}/${planned}) — good week to make sure recovery days actually stay easy.`;
+  } else if(loadRatio > 1.15 && adherencePct < 60 && lateInWeek){
+    note = `Load ratio's elevated and you're behind on this week (${done}/${planned}) — no need to cram, let the week stay light rather than doubling up.`;
+  } else if(adherencePct < 40 && lateInWeek){
+    note = `Only ${done}/${planned} sessions logged this week with a few days left — the long run matters more than catching up on everything else.`;
+  } else if(adherencePct >= 90){
+    note = `On track — ${done}/${planned} sessions logged (${fmtKm(doneKm)}/${fmtKm(plannedKm)} km), recovery and load both look comfortable.`;
+  } else {
+    note = `${done}/${planned} sessions logged so far (${fmtKm(doneKm)}/${fmtKm(plannedKm)} km) — recovery and load both look comfortable, nothing to change.`;
+  }
+  el.textContent = note;
+}
+
+// ---------- fitness trend / naive finish-time projection ----------
+function computeFitnessTrend(){
+  const countEl = document.getElementById('trendCount');
+  const ratioEl = document.getElementById('trendRatio');
+  const finishEl = document.getElementById('trendFinish');
+  if(!countEl) return;
+  const ratios = [];
+  Object.keys(dayMeta).forEach(key=>{
+    const meta = dayMeta[key];
+    if(meta.type === 'raceday') return; // the race itself isn't a training data point
+    const entry = getEntry(key);
+    if(!entry.pace) return;
+    const actualSec = parsePaceStr(entry.pace);
+    if(actualSec==null) return;
+    let targetSec;
+    if(meta.isRace){
+      targetSec = GOAL_PACE_SEC;
+    } else {
+      const band = parseBand(ZONE_PACE[meta.type] || '');
+      if(!band || band[0]==null || band[1]==null) return;
+      targetSec = (band[0]+band[1])/2;
+    }
+    if(targetSec>0) ratios.push(actualSec/targetSec);
+  });
+  countEl.textContent = ratios.length;
+  if(ratios.length < 3){
+    ratioEl.textContent = '—';
+    finishEl.textContent = 'log 3+ runs to unlock';
+    return;
+  }
+  const avgRatio = ratios.reduce((a,b)=>a+b,0)/ratios.length;
+  const pctDiff = (avgRatio-1)*100;
+  ratioEl.textContent = `${pctDiff>0?'+':''}${pctDiff.toFixed(1)}%${pctDiff<-0.05?' faster':pctDiff>0.05?' slower':''}`;
+  finishEl.textContent = fmtClock(GOAL_RACE_SECONDS * avgRatio);
+}
+
 function refreshAllDayUI(){
   Object.keys(dayMeta).forEach(key=>{
     const entry = getEntry(key);
     renderDoneState(key);
     updateToggleLabel(key);
     updateActualSummary(key);
+    renderNiggleState(key);
     ['pace','hr','shoe','note'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
     });
   });
   updateProgress();
+  renderNiggleWatch();
+  generateCoachNote();
+  computeFitnessTrend();
 }
 
 // ---------- tabs + panels ----------
 const tabsEl = document.getElementById('tabs');
 const panelsEl = document.getElementById('panels');
 const MS_DAY = 86400000;
+// UTC-anchored so the resulting YYYY-MM-DD key never drifts a day depending on
+// the browser's local timezone offset — local-midnight-then-toISOString() was
+// rolling back to the previous UTC day for any positive offset (e.g. Dublin
+// during BST, which covers this whole training window).
+function dateKeyFor(startStr, i){
+  const [y,m,d] = startStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m-1, d) + i*MS_DAY).toISOString().slice(0,10);
+}
 
 weeks.forEach(w=>{
   const tab = document.createElement('button');
@@ -1006,9 +1202,8 @@ weeks.forEach(w=>{
   `;
 
   const list = panel.querySelector('.day-list');
-  const weekStart = new Date(w.start+'T00:00:00');
   w.days.forEach((day,i)=>{
-    const dateKey = new Date(weekStart.getTime() + i*MS_DAY).toISOString().slice(0,10);
+    const dateKey = dateKeyFor(w.start, i);
     dayMeta[dateKey] = { type: day.type, adjustedKm: adjustedDayKm(day), isRace: (day.type==='race' || day.type==='raceday') };
 
     const row = document.createElement('div');
@@ -1026,6 +1221,7 @@ weeks.forEach(w=>{
         <span class="day-detail">${day.detail}</span>
         ${day.key ? '<span class="key-badge">KEY</span>' : ''}
         ${day.type==='raceday' ? '<span class="key-badge">RACE DAY</span>' : ''}
+        <span class="niggle-badge" data-niggle-badge="${dateKey}">&#9888; niggle</span>
         <div class="actual-summary" data-summary="${dateKey}"></div>
       </div>
       <div class="day-right">
@@ -1033,7 +1229,10 @@ weeks.forEach(w=>{
         <div class="day-hr">${hrText}</div>
         <div class="day-km">${fmtKm(day.km)} km</div>
         ${day.key ? `<div class="day-km-bracket">(${fmtKm(adjustedDayKm(day))} km w/ w-up+c-down)</div>` : ''}
-        <button class="log-toggle" data-toggle="${dateKey}">log run</button>
+        <div class="day-right-actions">
+          <button class="log-toggle" data-toggle="${dateKey}">log run</button>
+          <button class="niggle-btn" data-niggle="${dateKey}" aria-label="Flag a niggle" title="Flag a niggle">&#9888;</button>
+        </div>
       </div>
       <div class="log-form" data-form="${dateKey}">
         <div class="log-field"><label>Actual pace</label><input type="text" placeholder="m:ss" data-field="pace" data-key="${dateKey}"></div>
@@ -1054,6 +1253,8 @@ refreshAllDayUI();
 panelsEl.addEventListener('click', (e)=>{
   const chk = e.target.closest('.day-check');
   if(chk){ toggleDone(chk.dataset.key); return; }
+  const nig = e.target.closest('.niggle-btn');
+  if(nig){ toggleNiggle(nig.dataset.niggle); return; }
   const tgl = e.target.closest('.log-toggle');
   if(tgl){
     const form = document.querySelector('.log-form[data-form="'+tgl.dataset.toggle+'"]');
@@ -1067,6 +1268,9 @@ panelsEl.addEventListener('input', (e)=>{
   if(el.dataset.field==='pace' || el.dataset.field==='hr' || el.dataset.field==='shoe'){
     updateActualSummary(el.dataset.key);
     updateToggleLabel(el.dataset.key);
+  }
+  if(el.dataset.field==='pace'){
+    computeFitnessTrend();
   }
 });
 panelsEl.addEventListener('change', (e)=>{
@@ -1096,6 +1300,90 @@ function defaultWeek(){
   return weeks[weeks.length-1].num;
 }
 selectWeek(defaultWeek());
+
+// ============================================================================
+// CALENDAR EXPORT (.ics) — pure client-side, built from the plan data only
+// (not the log), so it works immediately without signing in.
+// ============================================================================
+function icsEscape(str){
+  return String(str).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+}
+function icsDate(dateKey){ return dateKey.replace(/-/g,''); }
+function buildICS(){
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Mullingar Canal 10K Plan//EN','CALSCALE:GREGORIAN'];
+  const stamp = new Date().toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+  weeks.forEach(w=>{
+    w.days.forEach((day,i)=>{
+      const dateKey = dateKeyFor(w.start, i);
+      const nextDayKey = dateKeyFor(w.start, i+1);
+      const isRaceDay = day.type==='raceday';
+      const summary = isRaceDay ? `RACE DAY — ${day.name} (goal 43:30)` : (day.key ? `KEY: ${day.name}` : day.name);
+      const paceText = (day.type==='race'||day.type==='raceday') ? `≈${GOAL_PACE_STR}/km` : `${ZONE_PACE[day.type]}/km`;
+      const hrPart = (day.hr && day.hr!=='pace') ? `, ${day.hr} bpm` : '';
+      const desc = `${day.detail} — target ${paceText}${hrPart}. Week ${w.num} (${w.phase}).`;
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:mc10k-${dateKey}@mullingar-canal-10k`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART;VALUE=DATE:${icsDate(dateKey)}`,
+        `DTEND;VALUE=DATE:${icsDate(nextDayKey)}`,
+        `SUMMARY:${icsEscape(summary)}`,
+        `DESCRIPTION:${icsEscape(desc)}`,
+        `CATEGORIES:${isRaceDay ? 'RACE' : (day.key ? 'KEY SESSION' : 'TRAINING')}`,
+        'END:VEVENT'
+      );
+    });
+  });
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+document.getElementById('calendarBtn').addEventListener('click', ()=>{
+  const blob = new Blob([buildICS()], {type:'text/calendar;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'mullingar-canal-10k-plan.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+// ============================================================================
+// RACE-DAY WEATHER — Open-Meteo (no API key needed). Only fetches once the
+// race falls within its ~16-day forecast window; otherwise leaves the
+// placeholder text alone.
+// ============================================================================
+async function loadWeatherIfClose(){
+  const el = document.getElementById('weatherValue');
+  if(!el || diffDays == null || diffDays < 0 || diffDays > 16) return;
+  try{
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=53.5262&longitude=-7.3382'
+      + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max'
+      + '&timezone=Europe%2FDublin&forecast_days=16';
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('weather fetch failed: '+res.status);
+    const data = await res.json();
+    const idx = data.daily.time.indexOf('2026-10-11');
+    if(idx === -1){ el.textContent = 'Forecast not published for race day yet.'; return; }
+    const tmax = Math.round(data.daily.temperature_2m_max[idx]);
+    const tmin = Math.round(data.daily.temperature_2m_min[idx]);
+    const rain = data.daily.precipitation_probability_max[idx];
+    const wind = Math.round(data.daily.wind_speed_10m_max[idx]);
+    el.textContent = `${tmin}–${tmax}°C, ${rain}% rain chance, wind ${wind} km/h`;
+
+    const adviceEl = document.getElementById('weatherAdvice');
+    if(adviceEl && tmax >= 18){
+      const bump = Math.round((tmax-15)*1.5); // rough rule of thumb, not physiology-validated
+      adviceEl.textContent = `Warm for a race (${tmax}°C max) — consider adding ~${bump}s/km buffer to goal pace and prioritising fluids.`;
+      adviceEl.style.display = 'block';
+    }
+  } catch(err){
+    console.error('Weather fetch failed:', err);
+    // leave the placeholder text in place — fail silently, this is a nice-to-have
+  }
+}
+loadWeatherIfClose();
 
 // ============================================================================
 // SYNC UI + AUTH WIRING
