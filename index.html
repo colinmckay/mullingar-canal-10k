@@ -179,6 +179,8 @@
   .calc-row label{font-size:12px; color:var(--text-dim);}
   .calc-input{background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-family:'JetBrains Mono',monospace; font-size:15px; color:var(--text); width:100px; text-align:center;}
   .calc-input:focus{outline:2px solid var(--z-lt1); outline-offset:1px;}
+  .calc-select{background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text); width:160px;}
+  .calc-select:focus{outline:2px solid var(--z-lt1); outline-offset:1px;}
   .calc-out{display:flex; gap:26px; flex-wrap:wrap; margin-bottom:8px;}
   .calc-out .co-num{font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; color:var(--z-lt1);}
   .calc-out .co-lbl{font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint); margin-top:2px;}
@@ -446,7 +448,16 @@
     <div class="calc-row">
       <label for="calcGoal">Goal 10K time</label>
       <input id="calcGoal" class="calc-input" type="text" value="43:30" inputmode="numeric" autocomplete="off">
-      <span style="color:var(--text-faint); font-size:11px;">mm:ss &mdash; sets even splits below; edit any row to customize</span>
+      <span style="color:var(--text-faint); font-size:11px;">mm:ss</span>
+    </div>
+    <div class="calc-row">
+      <label for="calcStrategy">Pacing</label>
+      <select id="calcStrategy" class="calc-select">
+        <option value="even">Even splits</option>
+        <option value="negative">Negative splits (faster finish)</option>
+        <option value="positive">Positive splits (slower finish)</option>
+      </select>
+      <span style="color:var(--text-faint); font-size:11px;">sets the splits below to match; edit any row to customize further</span>
     </div>
     <div class="calc-out">
       <div><div class="co-num" id="calcPaceKm">4:21</div><div class="co-lbl">avg min / km</div></div>
@@ -813,16 +824,30 @@ function updateCalcSummary(){
   }
 }
 
-function resetEvenSplits(){
+// Even splits average out to the goal pace exactly; negative/positive splits
+// ramp linearly across the 10 km so the average (and total finish time) is
+// unchanged — only how it's distributed across the race changes.
+const SPLIT_SPREAD = 0.06; // total swing from km1 to km10, as a fraction of avg pace
+const calcStrategyEl = document.getElementById('calcStrategy');
+
+function applyStrategy(){
   const totalSec = parseGoalTime(calcGoalEl.value);
   if(totalSec==null){
     document.getElementById('calcDelta').textContent = 'Enter a time as mm:ss, e.g. 43:30.';
     return;
   }
-  splits = Array(10).fill(totalSec/10);
+  const avg = totalSec/10;
+  const strategy = calcStrategyEl.value;
+  splits = Array.from({length:10}, (_, i) => {
+    const frac = i/9; // 0 at km1, 1 at km10
+    if(strategy==='negative') return avg * (1 + SPLIT_SPREAD/2 - SPLIT_SPREAD*frac); // slower start, faster finish
+    if(strategy==='positive') return avg * (1 - SPLIT_SPREAD/2 + SPLIT_SPREAD*frac); // faster start, slower finish
+    return avg; // even
+  });
   buildSplitsTable();
 }
-calcGoalEl.addEventListener('input', resetEvenSplits);
+calcGoalEl.addEventListener('input', applyStrategy);
+calcStrategyEl.addEventListener('change', applyStrategy);
 
 splitsTableEl.addEventListener('input', (e)=>{
   const el = e.target;
