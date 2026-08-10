@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Build to Mullingar Canal 10K</title>
+<title>Training Plan</title>
 <meta name="theme-color" content="#12151A">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png?v=2">
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Mullingar 10K">
+<meta name="apple-mobile-web-app-title" content="Training Plan">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -392,9 +392,9 @@
 <body>
 <div class="wrap">
 
-  <div class="eyebrow">9-week build &middot; trim ac &middot; v4</div>
-  <h1>Road to <span>Mullingar Canal</span></h1>
-  <p class="subhead">Aug 10 &ndash; Oct 11, 2026. Nine weeks of aerobic volume and threshold work funnelling into a 10K on the canal, goal 43:30.</p>
+  <div class="eyebrow" id="planEyebrow"></div>
+  <h1 id="planHeading"></h1>
+  <p class="subhead" id="planSubhead"></p>
 
   <div class="sync-bar" id="syncBar">
     <div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">Cloud sync not configured yet — log is saved on this device only.</span></div>
@@ -405,7 +405,7 @@
   </div>
 
   <div class="stat-strip">
-    <div class="stat"><div class="num">9</div><div class="lbl">Weeks</div></div>
+    <div class="stat"><div class="num" id="weeksStat">0</div><div class="lbl">Weeks</div></div>
     <div class="stat"><div class="num" id="totalKmStat">0<small>km</small></div><div class="lbl">Planned volume</div></div>
     <div class="stat"><div class="num" id="peakStat">&mdash;</div><div class="lbl">Peak week</div></div>
     <div class="stat" id="countdownStat"><div class="num">&mdash;</div><div class="lbl">To race day</div></div>
@@ -431,7 +431,7 @@
       <div class="info-row"><span class="k">Projected 10K finish</span><span class="v" id="trendFinish">—</span></div>
       <div class="info-row"><span class="k">Sessions w/ logged HR</span><span class="v" id="trendHrCount">0</span></div>
       <div class="info-row"><span class="k">Avg vs. target HR</span><span class="v" id="trendHrRatio">—</span></div>
-      <div class="info-note">Naive estimate: average of (actual &divide; target pace) across logged sessions, applied to the 43:30 goal pace. HR row compares logged avg HR to the midpoint of each session's prescribed HR zone (race-pace/race-day sessions excluded, since they're pace-based not HR-based). A trend signal, not a validated race predictor.</div>
+      <div class="info-note" id="trendNote"></div>
     </div>
     <div class="info-card">
       <h2>Niggle watch</h2>
@@ -439,7 +439,7 @@
     </div>
   </div>
 
-  <div class="zone-legend-cap">Pace &amp; pulse per zone <span>— pace from your RunZones profile, 6 Aug 2026</span></div>
+  <div class="zone-legend-cap">Pace &amp; pulse per zone <span id="paceSourceNote"></span></div>
   <div class="zone-legend" id="zoneLegend"></div>
 
   <div class="tabs-scroll">
@@ -450,25 +450,22 @@
 
   <div class="info-grid">
     <div class="info-card">
-      <h2>Race day <span class="snap">Sun 11 Oct 2026</span></h2>
-      <div class="info-row"><span class="k">Event</span><span class="v">Mullingar Canal 5K &amp; 10K</span></div>
-      <div class="info-row"><span class="k">Location</span><span class="v">Mullingar Harbour, Co. Westmeath</span></div>
-      <div class="info-row"><span class="k">Timing / organiser</span><span class="v">JustRuns Events</span></div>
-      <div class="info-row"><span class="k">Course</span><span class="v">Flat towpath</span></div>
-      <div class="info-row"><span class="k">Start time</span><span class="v">11:00 AM</span></div>
-      <div class="info-row"><span class="k">Registration / bib pickup</span><span class="v tbc">TBC &mdash; not yet published</span></div>
+      <h2>Race day <span class="snap" id="raceDaySnap"></span></h2>
+      <div class="info-row"><span class="k">Event</span><span class="v" id="raceEvent"></span></div>
+      <div class="info-row"><span class="k">Location</span><span class="v" id="raceLocation"></span></div>
+      <div class="info-row"><span class="k">Timing / organiser</span><span class="v" id="raceOrganiser"></span></div>
+      <div class="info-row"><span class="k">Course</span><span class="v" id="raceCourse"></span></div>
+      <div class="info-row"><span class="k">Start time</span><span class="v" id="raceStartTime"></span></div>
+      <div class="info-row"><span class="k">Registration / bib pickup</span><span class="v tbc" id="raceRegistration"></span></div>
       <div class="info-row"><span class="k">Forecast</span><span class="v" id="weatherValue">Opens up ~16 days before race day</span></div>
-      <ul class="checklist">
-        <li>Lay out kit + bib the night before</li>
-        <li>Breakfast 2&ndash;3h out, familiar food only</li>
-        <li>Arrive with time for a 10&ndash;15 min easy warm-up + strides</li>
-        <li>Race pace target <span id="raceChecklistPace">4:21</span>/km for the goal 43:30</li>
+      <ul class="checklist" id="raceChecklist">
+        <li>Race pace target <span id="raceChecklistPace">4:21</span>/km for the goal <span id="raceChecklistGoal"></span></li>
       </ul>
-      <div class="info-note">Date, distances and organiser confirmed via JustRuns Events / running calendar listings as of 7 Aug 2026; start location and time per race update. Registration/bib pickup details weren't published yet. Check <a href="https://justrunsevents.ie/upcoming-events" target="_blank" rel="noopener">justrunsevents.ie</a> closer to race day.</div>
+      <div class="info-note" id="raceInfoNote"></div>
       <div class="info-note" id="weatherAdvice" style="display:none; color:var(--z-power);"></div>
     </div>
     <div class="info-card">
-      <h2>Training status <span class="snap">COROS snapshot &middot; <span id="tsSnapDate">7 Aug 2026</span></span></h2>
+      <h2>Training status <span class="snap"><span id="tsSourceLabel">COROS</span> snapshot &middot; <span id="tsSnapDate">7 Aug 2026</span></span></h2>
       <div class="info-row"><span class="k">Recovery</span><span class="v"><span id="tsRecovery">100%</span> <span class="pill good" id="tsRecoveryPill">Heavy training OK</span></span></div>
       <div class="info-row"><span class="k">Load ratio (7d/28d)</span><span class="v"><span id="tsLoad">1.04</span> <span class="pill good" id="tsLoadPill">Optimized</span></span></div>
       <div class="info-row"><span class="k">Sleep HRV, last night</span><span class="v"><span id="tsHrv">71 ms</span> <span class="pill good" id="tsHrvPill">Normal</span></span></div>
@@ -517,16 +514,68 @@
   </div>
 
   <footer>
-    Session distances are the interval/rep work as listed. For KEY sessions (LT1, LT2, Aerobic Power, Race Pace), totals in brackets and week/hero figures add an estimated 2 km warm-up + 1 km cool-down to get closer to true run distance &mdash; Recovery, Steady Aerobic and Long Run days are continuous from the start so need no adjustment. Race Day is left as the 10 km race distance only.
+    <span id="footerDistanceNote"></span>
     <br><br>
+    <!-- PLAN-SPECIFIC — describes this plan's current pace-zone data source and
+         methodology; hand-edit for a new plan (a future plan may not even use
+         the same zone set, so this isn't templated). -->
     Pace targets are current-fitness bands from your RunZones performance review (6 Aug 2026), not older PBs: Recovery 5:46&ndash;6:36 &middot; Steady Aerobic 5:15&ndash;5:45 &middot; LT1 4:56&ndash;5:12 &middot; LT2 4:25&ndash;4:36 (reps pace &mdash; every LT2 session here is structured as repetitions) &middot; Aerobic Power 4:11&ndash;4:26 min/km. Race Pace and Race Day are pegged to your 43:30 goal (&asymp;4:21/km) rather than a RunZones zone, since race pace isn't one of the six. HR bands underneath are the COROS-based targets from the original session plan &mdash; the two systems don't fully agree (RunZones puts your LT1 pulse ceiling higher, for instance), so use pace as the primary dial and pulse as a secondary check, per the report's own guidance.
     <br><br>
-    Click the circle on any day to mark it done, or "log run" to record actual pace, average HR, shoe and a note. Sign in with Google (top of page) to sync that log across devices via Firestore; signed out, it's saved only in this browser's local storage. Shoe list is a snapshot of your active (non-retired) pairs from RunZones/COROS, 7 Aug 2026.
+    Click the circle on any day to mark it done, or "log run" to record actual pace, average HR, shoe and a note. Sign in with Google (top of page) to sync that log across devices via Firestore; signed out, it's saved only in this browser's local storage. <span id="footerShoeNote"></span>
   </footer>
 
 </div>
 
 <script type="module">
+// ============================================================================
+// PLAN CONFIG — everything specific to THIS race/training block lives here.
+// To reuse this app for a different race: edit this object, the
+// ZONE_*/TRAINING_STATUS/ACTIVE_SHOES/weeks blocks just below (still
+// hand-authored content, same as before), and manifest.json's
+// name/short_name/description — nothing else needs to change.
+// Change `slug` too, so a new plan's local + cloud-synced log doesn't
+// collide with an old one.
+// ============================================================================
+const PLAN_CONFIG = {
+  slug: 'mc10k',
+  tabTitle: 'Build to Mullingar Canal 10K',
+  appShortName: 'Mullingar 10K',
+  planLabel: 'trim ac · v4',
+  headingPrefix: 'Road to',
+  headingAccent: 'Mullingar Canal',
+  subhead: "Aug 10 – Oct 11, 2026. Nine weeks of aerobic volume and threshold work funnelling into a 10K on the canal, goal 43:30.",
+
+  goalTimeStr: '43:30',
+  goalDistanceKm: 10,
+  raceDateISO: '2026-10-11',
+  raceDateLabel: 'Sun 11 Oct 2026',
+
+  event: 'Mullingar Canal 5K & 10K',
+  location: 'Mullingar Harbour, Co. Westmeath',
+  organiser: 'JustRuns Events',
+  course: 'Flat towpath',
+  startTime: '11:00 AM',
+  registration: 'TBC — not yet published',
+  raceNote: "Date, distances and organiser confirmed via JustRuns Events / running calendar listings as of 7 Aug 2026; start location and time per race update. Registration/bib pickup details weren't published yet.",
+  raceNoteLinkUrl: 'https://justrunsevents.ie/upcoming-events',
+  raceNoteLinkLabel: 'justrunsevents.ie',
+  weatherLat: 53.5262,
+  weatherLon: -7.3382,
+
+  checklist: [
+    'Lay out kit + bib the night before',
+    'Breakfast 2–3h out, familiar food only',
+    'Arrive with time for a 10–15 min easy warm-up + strides',
+  ],
+
+  warmupKm: 2,
+  cooldownKm: 1,
+
+  paceSourceNote: 'pace from your RunZones profile, 6 Aug 2026',
+  trainingStatusSource: 'COROS',
+  shoeNote: 'Shoe list is a snapshot of your active (non-retired) pairs from RunZones/COROS, 7 Aug 2026.',
+};
+
 // ============================================================================
 // FIREBASE CONFIG — paste your project's config object here to turn on
 // cross-device sync. Until apiKey is filled in, the app runs on local
@@ -590,8 +639,8 @@ const ZONE_BPM = {
 const ZONE_PACE = {
   recovery:'5:46–6:36', steady:'5:15–5:45', lt1:'4:56–5:12', lt2:'4:25–4:36', power:'4:11–4:26'
 };
-const GOAL_RACE_SECONDS = (43*60)+30; // 43:30 for 10K, per the Week 9 race-day target
-const GOAL_PACE_SEC = GOAL_RACE_SECONDS/10;
+const GOAL_RACE_SECONDS = parseGoalTime(PLAN_CONFIG.goalTimeStr);
+const GOAL_PACE_SEC = GOAL_RACE_SECONDS/PLAN_CONFIG.goalDistanceKm;
 function fmtPace(totalSec){
   const m=Math.floor(totalSec/60), s=Math.round(totalSec%60);
   return m+':'+(s<10?'0':'')+s;
@@ -709,7 +758,45 @@ const weeks = [
   ]},
 ];
 
-const WU_KM = 2, CD_KM = 1, BUFFER_KM = WU_KM + CD_KM; // warm-up + cool-down bracketed onto KEY sessions
+const WU_KM = PLAN_CONFIG.warmupKm, CD_KM = PLAN_CONFIG.cooldownKm, BUFFER_KM = WU_KM + CD_KM; // warm-up + cool-down bracketed onto KEY sessions
+
+// ---------- apply PLAN_CONFIG to the static shell (title, hero, race day, footer) ----------
+function applyPlanConfig(){
+  document.title = PLAN_CONFIG.tabTitle;
+  const appTitleMeta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if(appTitleMeta) appTitleMeta.setAttribute('content', PLAN_CONFIG.appShortName);
+
+  document.getElementById('planEyebrow').textContent = `${weeks.length}-week build · ${PLAN_CONFIG.planLabel}`;
+  document.getElementById('planHeading').innerHTML = `${PLAN_CONFIG.headingPrefix} <span>${PLAN_CONFIG.headingAccent}</span>`;
+  document.getElementById('planSubhead').textContent = PLAN_CONFIG.subhead;
+  document.getElementById('weeksStat').textContent = weeks.length;
+
+  document.getElementById('raceDaySnap').textContent = PLAN_CONFIG.raceDateLabel;
+  document.getElementById('raceEvent').textContent = PLAN_CONFIG.event;
+  document.getElementById('raceLocation').textContent = PLAN_CONFIG.location;
+  document.getElementById('raceOrganiser').textContent = PLAN_CONFIG.organiser;
+  document.getElementById('raceCourse').textContent = PLAN_CONFIG.course;
+  document.getElementById('raceStartTime').textContent = PLAN_CONFIG.startTime;
+  document.getElementById('raceRegistration').textContent = PLAN_CONFIG.registration;
+  document.getElementById('raceChecklistGoal').textContent = PLAN_CONFIG.goalTimeStr;
+  const checklistEl = document.getElementById('raceChecklist');
+  PLAN_CONFIG.checklist.slice().reverse().forEach(item=>{
+    checklistEl.insertAdjacentHTML('afterbegin', `<li>${item}</li>`);
+  });
+  document.getElementById('raceInfoNote').innerHTML = `${PLAN_CONFIG.raceNote} Check <a href="${PLAN_CONFIG.raceNoteLinkUrl}" target="_blank" rel="noopener">${PLAN_CONFIG.raceNoteLinkLabel}</a> closer to race day.`;
+
+  document.getElementById('tsSourceLabel').textContent = PLAN_CONFIG.trainingStatusSource;
+  document.getElementById('paceSourceNote').textContent = '— ' + PLAN_CONFIG.paceSourceNote;
+
+  document.getElementById('trendNote').textContent = `Naive estimate: average of (actual ÷ target pace) across logged sessions, applied to the ${PLAN_CONFIG.goalTimeStr} goal pace. HR row compares logged avg HR to the midpoint of each session's prescribed HR zone (race-pace/race-day sessions excluded, since they're pace-based not HR-based). A trend signal, not a validated race predictor.`;
+
+  document.getElementById('footerDistanceNote').textContent = `Session distances are the interval/rep work as listed. For KEY sessions (LT1, LT2, Aerobic Power, Race Pace), totals in brackets and week/hero figures add an estimated ${PLAN_CONFIG.warmupKm} km warm-up + ${PLAN_CONFIG.cooldownKm} km cool-down to get closer to true run distance — Recovery, Steady Aerobic and Long Run days are continuous from the start so need no adjustment. Race Day is left as the ${PLAN_CONFIG.goalDistanceKm} km race distance only.`;
+  document.getElementById('footerShoeNote').textContent = PLAN_CONFIG.shoeNote;
+
+  const calcGoalEl = document.getElementById('calcGoal');
+  if(calcGoalEl) calcGoalEl.value = PLAN_CONFIG.goalTimeStr;
+}
+applyPlanConfig();
 
 function totalKm(w){ return w.days.reduce((s,d)=>s+d.km,0); }
 function adjustedDayKm(day){ return day.key ? day.km + BUFFER_KM : day.km; }
@@ -743,7 +830,7 @@ document.getElementById('totalKmStat').closest('.stat').querySelector('.lbl').in
 const peakIdx = allTotals.indexOf(Math.max(...allTotals));
 document.getElementById('peakStat').innerHTML = `W${weeks[peakIdx].num}<small> · ${fmtKm(allTotals[peakIdx])}km</small>`;
 
-const raceDate = new Date('2026-10-11T00:00:00');
+const raceDate = new Date(PLAN_CONFIG.raceDateISO+'T00:00:00');
 const now = new Date();
 const diffDays = Math.ceil((raceDate - now)/86400000);
 const cdEl = document.getElementById('countdownStat');
@@ -891,11 +978,11 @@ function parseSplitPace(str){
 
 const calcGoalEl = document.getElementById('calcGoal');
 const splitsTableEl = document.getElementById('splitsTable');
-let splits = Array(10).fill(GOAL_PACE_SEC); // seconds per km — each row editable independently
+let splits = Array(PLAN_CONFIG.goalDistanceKm).fill(GOAL_PACE_SEC); // seconds per km — each row editable independently
 
 function buildSplitsTable(){
   let rows = '<tr><th>Km</th><th>Split</th><th>Cumulative</th></tr>';
-  for(let i=0;i<10;i++){
+  for(let i=0;i<PLAN_CONFIG.goalDistanceKm;i++){
     rows += `<tr><td>${i+1}</td><td><input class="split-input" type="text" inputmode="numeric" autocomplete="off" data-idx="${i}" value="${fmtPace(splits[i])}"></td><td id="cum-${i}"></td></tr>`;
   }
   splitsTableEl.innerHTML = rows;
@@ -904,23 +991,23 @@ function buildSplitsTable(){
 
 function updateCalcSummary(){
   let cum = 0;
-  for(let i=0;i<10;i++){
+  for(let i=0;i<PLAN_CONFIG.goalDistanceKm;i++){
     cum += splits[i];
     const cell = document.getElementById('cum-'+i);
     if(cell) cell.textContent = fmtClock(cum);
   }
   const total = cum;
-  const avgSec = total/10;
+  const avgSec = total/PLAN_CONFIG.goalDistanceKm;
   document.getElementById('calcPaceKm').textContent = fmtPace(avgSec)+'/km';
   document.getElementById('calcPaceMi').textContent = fmtPace(avgSec*1.60934)+'/mi';
   const deltaEl = document.getElementById('calcDelta');
   const deltaSec = total - GOAL_RACE_SECONDS;
   const finishStr = fmtClock(total);
   if(Math.abs(deltaSec) < 0.5){
-    deltaEl.textContent = `Projected finish ${finishStr} — matches the plan's 43:30 goal.`;
+    deltaEl.textContent = `Projected finish ${finishStr} — matches the plan's ${PLAN_CONFIG.goalTimeStr} goal.`;
   } else {
     const sign = deltaSec > 0 ? '+' : '−';
-    deltaEl.textContent = `Projected finish ${finishStr} (${sign}${fmtClock(Math.abs(deltaSec))} vs. the plan's 43:30 goal).`;
+    deltaEl.textContent = `Projected finish ${finishStr} (${sign}${fmtClock(Math.abs(deltaSec))} vs. the plan's ${PLAN_CONFIG.goalTimeStr} goal).`;
   }
 }
 
@@ -933,13 +1020,13 @@ const calcStrategyEl = document.getElementById('calcStrategy');
 function applyStrategy(){
   const totalSec = parseGoalTime(calcGoalEl.value);
   if(totalSec==null){
-    document.getElementById('calcDelta').textContent = 'Enter a time as mm:ss, e.g. 43:30.';
+    document.getElementById('calcDelta').textContent = `Enter a time as mm:ss, e.g. ${PLAN_CONFIG.goalTimeStr}.`;
     return;
   }
-  const avg = totalSec/10;
+  const avg = totalSec/PLAN_CONFIG.goalDistanceKm;
   const strategy = calcStrategyEl.value;
-  splits = Array.from({length:10}, (_, i) => {
-    const frac = i/9; // 0 at km1, 1 at km10
+  splits = Array.from({length:PLAN_CONFIG.goalDistanceKm}, (_, i) => {
+    const frac = i/(PLAN_CONFIG.goalDistanceKm-1); // 0 at km1, 1 at the last km
     if(strategy==='negative') return avg * (1 + SPLIT_SPREAD/2 - SPLIT_SPREAD*frac); // slower start, faster finish
     if(strategy==='positive') return avg * (1 - SPLIT_SPREAD/2 + SPLIT_SPREAD*frac); // faster start, slower finish
     return avg; // even
@@ -968,7 +1055,8 @@ splitsTableEl.addEventListener('blur', (e)=>{
 buildSplitsTable();
 
 // ---------- run log (localStorage cache + optional Firestore sync) ----------
-const LOG_KEY = 'mc10k-plan-log-v4';
+const LOG_KEY = PLAN_CONFIG.slug + '-plan-log-v4';
+const CLOUD_DOC_ID = PLAN_CONFIG.slug + '-log';
 function loadLocalLog(){ try{ return JSON.parse(localStorage.getItem(LOG_KEY)) || {}; } catch(e){ return {}; } }
 function saveLocalLog(){ localStorage.setItem(LOG_KEY, JSON.stringify(runLog)); }
 let runLog = loadLocalLog();
@@ -992,7 +1080,7 @@ function scheduleCloudWrite(){
   clearTimeout(cloudWriteTimer);
   cloudWriteTimer = setTimeout(()=>{
     if(!cloudUser || !fb) return;
-    fb.setDoc(fb.doc(fb.db, 'users', cloudUser.uid, 'plan', 'mc10k-log'), { data: runLog, updatedAt: Date.now() })
+    fb.setDoc(fb.doc(fb.db, 'users', cloudUser.uid, 'plan', CLOUD_DOC_ID), { data: runLog, updatedAt: Date.now() })
       .catch(err => console.error('Cloud sync write failed:', err));
   }, 800);
 }
@@ -1313,7 +1401,7 @@ weeks.forEach(w=>{
 
     const row = document.createElement('div');
     row.className = 'day-row' + (day.type==='raceday' ? ' raceday' : '');
-    const hrText = day.type==='raceday' ? 'goal 43:30' : (day.hr==='pace' ? 'race effort' : day.hr+' bpm');
+    const hrText = day.type==='raceday' ? `goal ${PLAN_CONFIG.goalTimeStr}` : (day.hr==='pace' ? 'race effort' : day.hr+' bpm');
     const paceText = (day.type==='race' || day.type==='raceday')
       ? `≈${GOAL_PACE_STR} /km`
       : `${ZONE_PACE[day.type]} /km`;
@@ -1421,20 +1509,20 @@ function icsEscape(str){
 }
 function icsDate(dateKey){ return dateKey.replace(/-/g,''); }
 function buildICS(){
-  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Mullingar Canal 10K Plan//EN','CALSCALE:GREGORIAN'];
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0',`PRODID:-//${PLAN_CONFIG.tabTitle}//EN`,'CALSCALE:GREGORIAN'];
   const stamp = new Date().toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
   weeks.forEach(w=>{
     w.days.forEach((day,i)=>{
       const dateKey = dateKeyFor(w.start, i);
       const nextDayKey = dateKeyFor(w.start, i+1);
       const isRaceDay = day.type==='raceday';
-      const summary = isRaceDay ? `RACE DAY — ${day.name} (goal 43:30)` : (day.key ? `KEY: ${day.name}` : day.name);
+      const summary = isRaceDay ? `RACE DAY — ${day.name} (goal ${PLAN_CONFIG.goalTimeStr})` : (day.key ? `KEY: ${day.name}` : day.name);
       const paceText = (day.type==='race'||day.type==='raceday') ? `≈${GOAL_PACE_STR}/km` : `${ZONE_PACE[day.type]}/km`;
       const hrPart = (day.hr && day.hr!=='pace') ? `, ${day.hr} bpm` : '';
       const desc = `${day.detail} — target ${paceText}${hrPart}. Week ${w.num} (${w.phase}).`;
       lines.push(
         'BEGIN:VEVENT',
-        `UID:mc10k-${dateKey}@mullingar-canal-10k`,
+        `UID:${PLAN_CONFIG.slug}-${dateKey}@${PLAN_CONFIG.slug}`,
         `DTSTAMP:${stamp}`,
         `DTSTART;VALUE=DATE:${icsDate(dateKey)}`,
         `DTEND;VALUE=DATE:${icsDate(nextDayKey)}`,
@@ -1453,7 +1541,7 @@ document.getElementById('calendarBtn').addEventListener('click', ()=>{
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'mullingar-canal-10k-plan.ics';
+  a.download = PLAN_CONFIG.slug + '-plan.ics';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1469,13 +1557,13 @@ async function loadWeatherIfClose(){
   const el = document.getElementById('weatherValue');
   if(!el || diffDays == null || diffDays < 0 || diffDays > 16) return;
   try{
-    const url = 'https://api.open-meteo.com/v1/forecast?latitude=53.5262&longitude=-7.3382'
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${PLAN_CONFIG.weatherLat}&longitude=${PLAN_CONFIG.weatherLon}`
       + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max'
       + '&timezone=Europe%2FDublin&forecast_days=16';
     const res = await fetch(url);
     if(!res.ok) throw new Error('weather fetch failed: '+res.status);
     const data = await res.json();
-    const idx = data.daily.time.indexOf('2026-10-11');
+    const idx = data.daily.time.indexOf(PLAN_CONFIG.raceDateISO);
     if(idx === -1){ el.textContent = 'Forecast not published for race day yet.'; return; }
     const tmax = Math.round(data.daily.temperature_2m_max[idx]);
     const tmin = Math.round(data.daily.temperature_2m_min[idx]);
@@ -1539,14 +1627,14 @@ async function setupSync(){
       syncText.textContent = `Synced as ${user.email}`;
       syncBtn.textContent = 'Sign out';
       try{
-        const snap = await fb.getDoc(fb.doc(fb.db, 'users', user.uid, 'plan', 'mc10k-log'));
+        const snap = await fb.getDoc(fb.doc(fb.db, 'users', user.uid, 'plan', CLOUD_DOC_ID));
         if(snap.exists() && snap.data().data){
           // Cloud copy exists — it wins (most recently synced device is source of truth).
           runLog = snap.data().data;
           saveLocalLog();
         } else {
           // First time this account has synced — push up whatever is local.
-          await fb.setDoc(fb.doc(fb.db, 'users', user.uid, 'plan', 'mc10k-log'), { data: runLog, updatedAt: Date.now() });
+          await fb.setDoc(fb.doc(fb.db, 'users', user.uid, 'plan', CLOUD_DOC_ID), { data: runLog, updatedAt: Date.now() });
         }
         refreshAllDayUI();
       } catch(err){
