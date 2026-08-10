@@ -366,6 +366,7 @@
     font-family:'JetBrains Mono',monospace; font-size:12px; padding:6px 8px;
   }
   .log-field input{width:78px;}
+  .log-field input[readonly]{color:var(--text-dim); background:var(--surface-2); cursor:default;}
   .log-field select{width:170px;}
   .log-field.note{flex:1 1 160px;}
   .log-field.note input{width:100%;}
@@ -405,7 +406,7 @@
 
   <div class="stat-strip">
     <div class="stat"><div class="num">9</div><div class="lbl">Weeks</div></div>
-    <div class="stat"><div class="num" id="totalKmStat">0<small>km</small></div><div class="lbl">Total volume</div></div>
+    <div class="stat"><div class="num" id="totalKmStat">0<small>km</small></div><div class="lbl">Planned volume</div></div>
     <div class="stat"><div class="num" id="peakStat">&mdash;</div><div class="lbl">Peak week</div></div>
     <div class="stat" id="countdownStat"><div class="num">&mdash;</div><div class="lbl">To race day</div></div>
   </div>
@@ -735,7 +736,7 @@ const allTotals = weeks.map(adjustedTotalKm); // adjusted = listed + warm-up/coo
 const grandListed = listedTotals.reduce((a,b)=>a+b,0);
 const grandTotal = allTotals.reduce((a,b)=>a+b,0);
 document.getElementById('totalKmStat').innerHTML = fmtKm(grandTotal)+'<small>km</small>';
-document.getElementById('totalKmStat').closest('.stat').querySelector('.lbl').innerHTML = `Total volume<span class="lbl2">${fmtKm(grandListed)} listed + ${fmtKm(grandTotal-grandListed)} w-up/c-down</span>`;
+document.getElementById('totalKmStat').closest('.stat').querySelector('.lbl').innerHTML = `Planned volume<span class="lbl2">${fmtKm(grandListed)} listed + ${fmtKm(grandTotal-grandListed)} w-up/c-down</span><span class="lbl2" id="totalKmActual">actual logged: 0 km</span>`;
 const peakIdx = allTotals.indexOf(Math.max(...allTotals));
 document.getElementById('peakStat').innerHTML = `W${weeks[peakIdx].num}<small> · ${fmtKm(allTotals[peakIdx])}km</small>`;
 
@@ -984,12 +985,46 @@ function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
   const e = getEntry(key);
-  btn.textContent = (e.pace || e.hr || e.shoe || e.note) ? 'edit log' : 'log run';
+  btn.textContent = (e.dist || e.time || e.pace || e.hr || e.shoe || e.note) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
   if(!m) return null;
   return (+m[1])*60 + (+m[2]);
+}
+function parseTimeStr(str){
+  const s = String(str).trim();
+  let m = s.match(/^(\d{1,2}):([0-5]?\d):([0-5]?\d)$/); // h:mm:ss
+  if(m) return (+m[1])*3600 + (+m[2])*60 + (+m[3]);
+  m = s.match(/^(\d{1,3}):([0-5]?\d)$/); // m:ss / mm:ss (minutes can exceed 59 for long runs)
+  if(m) return (+m[1])*60 + (+m[2]);
+  return null;
+}
+function recomputePace(key){
+  const entry = getEntry(key);
+  const dist = parseFloat(entry.dist);
+  const timeSec = parseTimeStr(entry.time);
+  const paceStr = (dist>0 && timeSec>0) ? fmtPace(timeSec/dist) : '';
+  setEntryField(key, 'pace', paceStr);
+  const input = document.querySelector('[data-field="pace"][data-key="'+key+'"]');
+  if(input) input.value = paceStr;
+}
+function actualWeekKm(w){
+  let sum = 0;
+  w.days.forEach((day,i)=>{
+    const d = parseFloat(getEntry(dateKeyFor(w.start, i)).dist);
+    if(!isNaN(d) && d>0) sum += d;
+  });
+  return sum;
+}
+function actualGrandKm(){ return weeks.reduce((s,w)=>s+actualWeekKm(w),0); }
+function updateVolumeStats(){
+  const totalActualEl = document.getElementById('totalKmActual');
+  if(totalActualEl) totalActualEl.textContent = 'actual logged: ' + fmtKm(actualGrandKm()) + ' km';
+  weeks.forEach(w=>{
+    const el = document.getElementById('actualKm-'+w.num);
+    if(el) el.textContent = fmtKm(actualWeekKm(w)) + ' km';
+  });
 }
 function parseBand(str){
   const parts = str.split('–').map(s=>s.trim());
@@ -1001,18 +1036,26 @@ function updateActualSummary(key){
   const el = document.querySelector('.actual-summary[data-summary="'+key+'"]');
   if(!el || !meta) return;
   const entry = getEntry(key);
-  if(!entry.pace){ el.style.display='none'; el.textContent=''; return; }
-  const actualSec = parsePaceStr(entry.pace);
+  if(!entry.pace && !entry.dist){ el.style.display='none'; el.textContent=''; return; }
   let cls = 'amber';
-  if(actualSec!=null){
-    const band = meta.isRace ? [GOAL_PACE_SEC-6, GOAL_PACE_SEC+6] : parseBand(ZONE_PACE[meta.type] || '');
-    if(band && band[0]!=null && band[1]!=null){
-      if(actualSec>=band[0]-3 && actualSec<=band[1]+3) cls='good';
-      else if(actualSec>=band[0]-15 && actualSec<=band[1]+15) cls='amber';
-      else cls='bad';
+  if(entry.pace){
+    const actualSec = parsePaceStr(entry.pace);
+    if(actualSec!=null){
+      const band = meta.isRace ? [GOAL_PACE_SEC-6, GOAL_PACE_SEC+6] : parseBand(ZONE_PACE[meta.type] || '');
+      if(band && band[0]!=null && band[1]!=null){
+        if(actualSec>=band[0]-3 && actualSec<=band[1]+3) cls='good';
+        else if(actualSec>=band[0]-15 && actualSec<=band[1]+15) cls='amber';
+        else cls='bad';
+      }
     }
   }
-  el.textContent = 'actual ' + entry.pace + '/km' + (entry.hr ? ' · ' + entry.hr + ' bpm' : '') + (entry.shoe ? ' · ' + entry.shoe : '');
+  const parts = [];
+  if(entry.dist) parts.push(entry.dist + ' km');
+  if(entry.time) parts.push('in ' + entry.time);
+  if(entry.pace) parts.push(entry.pace + '/km avg');
+  if(entry.hr) parts.push(entry.hr + ' bpm');
+  if(entry.shoe) parts.push(entry.shoe);
+  el.textContent = 'actual ' + parts.join(' · ');
   el.className = 'actual-summary ' + cls;
   el.style.display = 'block';
 }
@@ -1149,12 +1192,13 @@ function refreshAllDayUI(){
     updateToggleLabel(key);
     updateActualSummary(key);
     renderNiggleState(key);
-    ['pace','hr','shoe','note'].forEach(f=>{
+    ['dist','time','pace','hr','shoe','note'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
     });
   });
   updateProgress();
+  updateVolumeStats();
   renderNiggleWatch();
   generateCoachNote();
   computeFitnessTrend();
@@ -1194,7 +1238,8 @@ weeks.forEach(w=>{
         <div class="range">${weekRangeLabel(w.start)}</div>
       </div>
       <div class="week-meta">
-        <div><div class="m-num">${fmtKm(wAdjusted)} km</div><div class="m-lbl">total${wAdjusted>wListed ? ` <span class="lbl2">(${fmtKm(wListed)} listed)</span>` : ''}</div></div>
+        <div><div class="m-num">${fmtKm(wAdjusted)} km</div><div class="m-lbl">planned${wAdjusted>wListed ? ` <span class="lbl2">(${fmtKm(wListed)} listed)</span>` : ''}</div></div>
+        <div><div class="m-num" id="actualKm-${w.num}">0 km</div><div class="m-lbl">actual</div></div>
         <div><div class="m-num">${keyCount}</div><div class="m-lbl">key session${keyCount===1?'':'s'}</div></div>
       </div>
     </div>
@@ -1204,7 +1249,7 @@ weeks.forEach(w=>{
   const list = panel.querySelector('.day-list');
   w.days.forEach((day,i)=>{
     const dateKey = dateKeyFor(w.start, i);
-    dayMeta[dateKey] = { type: day.type, adjustedKm: adjustedDayKm(day), isRace: (day.type==='race' || day.type==='raceday') };
+    dayMeta[dateKey] = { type: day.type, adjustedKm: adjustedDayKm(day), isRace: (day.type==='race' || day.type==='raceday'), weekNum: w.num };
 
     const row = document.createElement('div');
     row.className = 'day-row' + (day.type==='raceday' ? ' raceday' : '');
@@ -1235,7 +1280,9 @@ weeks.forEach(w=>{
         </div>
       </div>
       <div class="log-form" data-form="${dateKey}">
-        <div class="log-field"><label>Actual pace</label><input type="text" placeholder="m:ss" data-field="pace" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Distance</label><input type="text" inputmode="decimal" placeholder="km" data-field="dist" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Time</label><input type="text" placeholder="mm:ss" data-field="time" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Avg pace</label><input type="text" placeholder="auto" data-field="pace" data-key="${dateKey}" readonly></div>
         <div class="log-field"><label>Avg HR</label><input type="text" placeholder="bpm" data-field="hr" data-key="${dateKey}"></div>
         <div class="log-field"><label>Shoe</label><select data-field="shoe" data-key="${dateKey}"><option value="">—</option>${SHOE_OPTIONS}</select></div>
         <div class="log-field note"><label>Notes</label><input type="text" placeholder="how did it feel?" data-field="note" data-key="${dateKey}"></div>
@@ -1264,12 +1311,16 @@ panelsEl.addEventListener('click', (e)=>{
 panelsEl.addEventListener('input', (e)=>{
   const el = e.target;
   if(!el.dataset || !el.dataset.field) return;
-  setEntryField(el.dataset.key, el.dataset.field, el.value);
-  if(el.dataset.field==='pace' || el.dataset.field==='hr' || el.dataset.field==='shoe'){
-    updateActualSummary(el.dataset.key);
-    updateToggleLabel(el.dataset.key);
+  const field = el.dataset.field;
+  if(field==='pace') return; // pace is derived from distance + time, not directly editable
+  setEntryField(el.dataset.key, field, el.value);
+  if(field==='dist' || field==='time'){
+    recomputePace(el.dataset.key);
+    updateVolumeStats();
   }
-  if(el.dataset.field==='pace'){
+  updateActualSummary(el.dataset.key);
+  updateToggleLabel(el.dataset.key);
+  if(field==='dist' || field==='time' || field==='pace'){
     computeFitnessTrend();
   }
 });
