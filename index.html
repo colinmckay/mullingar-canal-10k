@@ -370,6 +370,14 @@
   .log-field select{width:170px;}
   .log-field.note{flex:1 1 160px;}
   .log-field.note input{width:100%;}
+  .log-field input[type="file"]{width:160px; padding:5px 4px; font-size:11px;}
+  .gpx-status{flex-basis:100%; font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-dim); display:none; align-items:center; gap:8px;}
+  .gpx-status.show{display:flex;}
+  .gpx-status button{
+    background:transparent; border:1px solid var(--line); color:var(--text-faint);
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:2px 7px; border-radius:6px; cursor:pointer;
+  }
+  .gpx-status button:hover{color:var(--z-race); border-color:var(--z-race);}
 
   footer{
     margin-top:36px;
@@ -521,7 +529,7 @@
          the same zone set, so this isn't templated). -->
     Pace targets are current-fitness bands from your RunZones performance review (6 Aug 2026), not older PBs: Recovery 5:46&ndash;6:36 &middot; Steady Aerobic 5:15&ndash;5:45 &middot; LT1 4:56&ndash;5:12 &middot; LT2 4:25&ndash;4:36 (reps pace &mdash; every LT2 session here is structured as repetitions) &middot; Aerobic Power 4:11&ndash;4:26 min/km. Race Pace and Race Day are pegged to your 43:30 goal (&asymp;4:21/km) rather than a RunZones zone, since race pace isn't one of the six. HR bands underneath are the COROS-based targets from the original session plan &mdash; the two systems don't fully agree (RunZones puts your LT1 pulse ceiling higher, for instance), so use pace as the primary dial and pulse as a secondary check, per the report's own guidance.
     <br><br>
-    Click the circle on any day to mark it done, or "log run" to record actual pace, average HR, shoe and a note. Sign in with Google (top of page) to sync that log across devices via Firestore; signed out, it's saved only in this browser's local storage. <span id="footerShoeNote"></span>
+    Click the circle on any day to mark it done, or "log run" to record actual pace, average HR, shoe, a note, or a GPX file from your watch/app (distance and time auto-fill from it). Sign in with Google (top of page) to sync that log across devices via Firestore; signed out, it's saved only in this browser's local storage. GPX files themselves stay local to the device you uploaded them from &mdash; only the distance/elevation summary syncs. <span id="footerShoeNote"></span>
   </footer>
 
 </div>
@@ -1065,6 +1073,118 @@ const dayMeta = {}; // dateKey -> {type, adjustedKm, isRace}
 let cloudUser = null;      // signed-in Firebase user, or null
 let cloudWriteTimer = null;
 
+// ---------- GPX attachments (local-only — deliberately NOT part of runLog/
+// cloud sync, since Firestore caps a document at 1MB and the whole log is
+// one doc; a season of raw GPX files would blow past that fast). Parsed
+// summary stats (distance/duration/elevation) DO live in runLog since
+// they're tiny, so those still sync across devices — just not the raw file.
+const GPX_KEY = PLAN_CONFIG.slug + '-gpx-v1';
+function loadGpxStore(){ try{ return JSON.parse(localStorage.getItem(GPX_KEY)) || {}; } catch(e){ return {}; } }
+function saveGpxStore(){
+  try{ localStorage.setItem(GPX_KEY, JSON.stringify(gpxStore)); }
+  catch(err){ console.error('GPX store save failed (storage full?):', err); alert('Could not save that GPX file — local storage may be full.'); }
+}
+let gpxStore = loadGpxStore();
+function haversineM(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function parseGPX(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if(doc.querySelector('parsererror')) return null;
+  const trkpts = Array.from(doc.getElementsByTagName('trkpt'));
+  if(trkpts.length < 2) return null;
+  let distM = 0, elevGainM = 0;
+  let prevLat=null, prevLon=null, prevEle=null;
+  trkpts.forEach(pt=>{
+    const lat = parseFloat(pt.getAttribute('lat'));
+    const lon = parseFloat(pt.getAttribute('lon'));
+    const eleEl = pt.getElementsByTagName('ele')[0];
+    const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+    if(prevLat!=null && !isNaN(lat) && !isNaN(lon)){
+      distM += haversineM(prevLat, prevLon, lat, lon);
+      if(ele!=null && prevEle!=null && !isNaN(ele) && ele>prevEle) elevGainM += (ele-prevEle);
+    }
+    if(!isNaN(lat) && !isNaN(lon)){ prevLat=lat; prevLon=lon; }
+    if(ele!=null && !isNaN(ele)) prevEle=ele;
+  });
+  const times = trkpts.map(pt=>{
+    const t = pt.getElementsByTagName('time')[0];
+    return t ? new Date(t.textContent).getTime() : null;
+  }).filter(t=>t!=null && !isNaN(t));
+  const durationSec = times.length>=2 ? (Math.max(...times)-Math.min(...times))/1000 : null;
+  if(distM<=0) return null;
+  return { distanceKm: distM/1000, durationSec, elevGainM: Math.round(elevGainM) };
+}
+function handleGpxUpload(key, file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const parsed = parseGPX(String(reader.result));
+    if(!parsed){
+      alert("Couldn't read that GPX file — check it has track points with lat/lon.");
+      return;
+    }
+    gpxStore[key] = String(reader.result);
+    saveGpxStore();
+    setEntryField(key, 'gpxFileName', file.name);
+    setEntryField(key, 'gpxElevGainM', String(parsed.elevGainM));
+    setEntryField(key, 'dist', parsed.distanceKm.toFixed(2));
+    const distInput = document.querySelector('[data-field="dist"][data-key="'+key+'"]');
+    if(distInput) distInput.value = parsed.distanceKm.toFixed(2);
+    if(parsed.durationSec){
+      setEntryField(key, 'time', fmtClock(parsed.durationSec));
+      const timeInput = document.querySelector('[data-field="time"][data-key="'+key+'"]');
+      if(timeInput) timeInput.value = fmtClock(parsed.durationSec);
+    }
+    recomputePace(key);
+    updateVolumeStats();
+    refreshGpxStatus(key);
+    updateActualSummary(key);
+    updateToggleLabel(key);
+    computeFitnessTrend();
+  };
+  reader.onerror = () => alert("Couldn't read that file.");
+  reader.readAsText(file);
+}
+function removeGpx(key){
+  delete gpxStore[key];
+  saveGpxStore();
+  setEntryField(key, 'gpxFileName', '');
+  setEntryField(key, 'gpxElevGainM', '');
+  refreshGpxStatus(key);
+  updateActualSummary(key);
+  updateToggleLabel(key);
+}
+function downloadGpx(key){
+  const text = gpxStore[key];
+  if(!text){
+    alert("The original GPX file isn't available on this device — GPX files stay local to whichever device you uploaded them from and aren't cloud-synced (only the distance/elevation summary is).");
+    return;
+  }
+  const entry = getEntry(key);
+  const blob = new Blob([text], {type:'application/gpx+xml'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = entry.gpxFileName || (key + '.gpx');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function refreshGpxStatus(key){
+  const el = document.querySelector('.gpx-status[data-gpx-status="'+key+'"]');
+  if(!el) return;
+  const entry = getEntry(key);
+  if(!entry.gpxFileName){ el.classList.remove('show'); el.innerHTML = ''; return; }
+  const elevPart = entry.gpxElevGainM ? ` · +${entry.gpxElevGainM} m elev` : '';
+  el.innerHTML = `&#128206; ${entry.gpxFileName}${elevPart} <button type="button" data-gpx-download="${key}">download</button> <button type="button" data-gpx-remove="${key}">remove</button>`;
+  el.classList.add('show');
+}
+
 function getEntry(key){ return runLog[key] || {}; }
 function setEntryField(key, field, value){
   runLog[key] = runLog[key] || {};
@@ -1105,7 +1225,7 @@ function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
   const e = getEntry(key);
-  btn.textContent = (e.dist || e.time || e.pace || e.hr || e.shoe || e.note) ? 'edit log' : 'log run';
+  btn.textContent = (e.dist || e.time || e.pace || e.hr || e.shoe || e.note || e.gpxFileName) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1176,6 +1296,7 @@ function updateActualSummary(key){
   if(entry.pace) parts.push(entry.pace + '/km avg');
   if(entry.hr) parts.push(entry.hr + ' bpm');
   if(entry.shoe) parts.push(entry.shoe);
+  if(entry.gpxFileName) parts.push('📎 ' + entry.gpxFileName);
   el.textContent = 'actual ' + parts.join(' · ');
   el.className = 'actual-summary ' + cls;
   el.style.display = 'block';
@@ -1340,6 +1461,7 @@ function refreshAllDayUI(){
     updateToggleLabel(key);
     updateActualSummary(key);
     renderNiggleState(key);
+    refreshGpxStatus(key);
     ['dist','time','pace','hr','shoe','note'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
@@ -1433,7 +1555,9 @@ weeks.forEach(w=>{
         <div class="log-field"><label>Avg pace</label><input type="text" placeholder="auto" data-field="pace" data-key="${dateKey}" readonly></div>
         <div class="log-field"><label>Avg HR</label><input type="text" placeholder="bpm" data-field="hr" data-key="${dateKey}"></div>
         <div class="log-field"><label>Shoe</label><select data-field="shoe" data-key="${dateKey}"><option value="">—</option>${SHOE_OPTIONS}</select></div>
+        <div class="log-field"><label>GPX file</label><input type="file" accept=".gpx,application/gpx+xml" data-field="gpx" data-key="${dateKey}"></div>
         <div class="log-field note"><label>Notes</label><input type="text" placeholder="how did it feel?" data-field="note" data-key="${dateKey}"></div>
+        <div class="gpx-status" data-gpx-status="${dateKey}"></div>
       </div>
     `;
     list.appendChild(row);
@@ -1454,7 +1578,12 @@ panelsEl.addEventListener('click', (e)=>{
   if(tgl){
     const form = document.querySelector('.log-form[data-form="'+tgl.dataset.toggle+'"]');
     if(form) form.classList.toggle('open');
+    return;
   }
+  const dl = e.target.closest('[data-gpx-download]');
+  if(dl){ downloadGpx(dl.dataset.gpxDownload); return; }
+  const rm = e.target.closest('[data-gpx-remove]');
+  if(rm){ removeGpx(rm.dataset.gpxRemove); return; }
 });
 panelsEl.addEventListener('input', (e)=>{
   const el = e.target;
@@ -1478,6 +1607,10 @@ panelsEl.addEventListener('change', (e)=>{
     setEntryField(el.dataset.key, el.dataset.field, el.value);
     updateActualSummary(el.dataset.key);
     updateToggleLabel(el.dataset.key);
+  }
+  if(el.type==='file' && el.dataset && el.dataset.field==='gpx'){
+    handleGpxUpload(el.dataset.key, el.files && el.files[0]);
+    el.value = ''; // clear the picker so re-selecting the same file re-fires change
   }
 });
 
