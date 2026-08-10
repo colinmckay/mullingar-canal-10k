@@ -429,7 +429,9 @@
       <div class="info-row"><span class="k">Sessions w/ logged pace</span><span class="v" id="trendCount">0</span></div>
       <div class="info-row"><span class="k">Avg vs. target pace</span><span class="v" id="trendRatio">—</span></div>
       <div class="info-row"><span class="k">Projected 10K finish</span><span class="v" id="trendFinish">—</span></div>
-      <div class="info-note">Naive estimate: average of (actual &divide; target pace) across logged sessions, applied to the 43:30 goal pace. A trend signal, not a validated race predictor.</div>
+      <div class="info-row"><span class="k">Sessions w/ logged HR</span><span class="v" id="trendHrCount">0</span></div>
+      <div class="info-row"><span class="k">Avg vs. target HR</span><span class="v" id="trendHrRatio">—</span></div>
+      <div class="info-note">Naive estimate: average of (actual &divide; target pace) across logged sessions, applied to the 43:30 goal pace. HR row compares logged avg HR to the midpoint of each session's prescribed HR zone (race-pace/race-day sessions excluded, since they're pace-based not HR-based). A trend signal, not a validated race predictor.</div>
     </div>
     <div class="info-card">
       <h2>Niggle watch</h2>
@@ -1181,39 +1183,66 @@ function generateCoachNote(){
 }
 
 // ---------- fitness trend / naive finish-time projection ----------
+function parseHrBand(str){
+  const parts = String(str).split('–').map(s=>s.trim());
+  if(parts.length!==2) return null;
+  const a = parseFloat(parts[0]), b = parseFloat(parts[1]);
+  if(isNaN(a) || isNaN(b)) return null;
+  return [a,b];
+}
 function computeFitnessTrend(){
   const countEl = document.getElementById('trendCount');
   const ratioEl = document.getElementById('trendRatio');
   const finishEl = document.getElementById('trendFinish');
+  const hrCountEl = document.getElementById('trendHrCount');
+  const hrRatioEl = document.getElementById('trendHrRatio');
   if(!countEl) return;
   const ratios = [];
+  const hrRatios = [];
   Object.keys(dayMeta).forEach(key=>{
     const meta = dayMeta[key];
     if(meta.type === 'raceday') return; // the race itself isn't a training data point
     const entry = getEntry(key);
-    if(!entry.pace) return;
-    const actualSec = parsePaceStr(entry.pace);
-    if(actualSec==null) return;
-    let targetSec;
-    if(meta.isRace){
-      targetSec = GOAL_PACE_SEC;
-    } else {
-      const band = parseBand(ZONE_PACE[meta.type] || '');
-      if(!band || band[0]==null || band[1]==null) return;
-      targetSec = (band[0]+band[1])/2;
+    if(entry.pace){
+      const actualSec = parsePaceStr(entry.pace);
+      if(actualSec!=null){
+        let targetSec;
+        if(meta.isRace){
+          targetSec = GOAL_PACE_SEC;
+        } else {
+          const band = parseBand(ZONE_PACE[meta.type] || '');
+          if(band && band[0]!=null && band[1]!=null) targetSec = (band[0]+band[1])/2;
+        }
+        if(targetSec>0) ratios.push(actualSec/targetSec);
+      }
     }
-    if(targetSec>0) ratios.push(actualSec/targetSec);
+    if(entry.hr){
+      const actualHr = parseFloat(entry.hr);
+      const hrBand = parseHrBand(ZONE_BPM[meta.type] || ''); // null for race-pace/race-day — HR isn't the prescribed target there
+      if(!isNaN(actualHr) && hrBand){
+        const targetHr = (hrBand[0]+hrBand[1])/2;
+        if(targetHr>0) hrRatios.push(actualHr/targetHr);
+      }
+    }
   });
   countEl.textContent = ratios.length;
   if(ratios.length < 3){
     ratioEl.textContent = '—';
     finishEl.textContent = 'log 3+ runs to unlock';
-    return;
+  } else {
+    const avgRatio = ratios.reduce((a,b)=>a+b,0)/ratios.length;
+    const pctDiff = (avgRatio-1)*100;
+    ratioEl.textContent = `${pctDiff>0?'+':''}${pctDiff.toFixed(1)}%${pctDiff<-0.05?' faster':pctDiff>0.05?' slower':''}`;
+    finishEl.textContent = fmtClock(GOAL_RACE_SECONDS * avgRatio);
   }
-  const avgRatio = ratios.reduce((a,b)=>a+b,0)/ratios.length;
-  const pctDiff = (avgRatio-1)*100;
-  ratioEl.textContent = `${pctDiff>0?'+':''}${pctDiff.toFixed(1)}%${pctDiff<-0.05?' faster':pctDiff>0.05?' slower':''}`;
-  finishEl.textContent = fmtClock(GOAL_RACE_SECONDS * avgRatio);
+  hrCountEl.textContent = hrRatios.length;
+  if(hrRatios.length < 3){
+    hrRatioEl.textContent = '—';
+  } else {
+    const avgHrRatio = hrRatios.reduce((a,b)=>a+b,0)/hrRatios.length;
+    const hrPctDiff = (avgHrRatio-1)*100;
+    hrRatioEl.textContent = `${hrPctDiff>0?'+':''}${hrPctDiff.toFixed(1)}%${hrPctDiff<-0.05?' below target':hrPctDiff>0.05?' above target':''}`;
+  }
 }
 
 function refreshAllDayUI(){
@@ -1351,7 +1380,7 @@ panelsEl.addEventListener('input', (e)=>{
   }
   updateActualSummary(el.dataset.key);
   updateToggleLabel(el.dataset.key);
-  if(field==='dist' || field==='time' || field==='pace'){
+  if(field==='dist' || field==='time' || field==='pace' || field==='hr'){
     computeFitnessTrend();
   }
 });
