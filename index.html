@@ -1225,7 +1225,7 @@ function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
   const e = getEntry(key);
-  btn.textContent = (e.dist || e.time || e.pace || e.hr || e.shoe || e.note || e.gpxFileName) ? 'edit log' : 'log run';
+  btn.textContent = (e.dist || e.time || e.pace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1323,9 +1323,13 @@ function toggleNiggle(key){
 function renderNiggleState(key){
   const btn = document.querySelector('.niggle-btn[data-niggle="'+key+'"]');
   const badge = document.querySelector('[data-niggle-badge="'+key+'"]');
-  const active = !!getEntry(key).niggle;
+  const entry = getEntry(key);
+  const active = !!entry.niggle;
   if(btn) btn.classList.toggle('active', active);
-  if(badge) badge.style.display = active ? 'inline-block' : 'none';
+  if(badge){
+    badge.style.display = active ? 'inline-block' : 'none';
+    badge.title = entry.niggleNote || '';
+  }
 }
 function renderNiggleWatch(){
   const el = document.getElementById('niggleList');
@@ -1335,7 +1339,8 @@ function renderNiggleWatch(){
   el.innerHTML = flagged.map(k=>{
     const e = getEntry(k);
     const label = new Date(k+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    return `<div style="margin-bottom:4px;"><b style="color:var(--z-power); font-family:'JetBrains Mono',monospace;">${label}</b>${e.note ? ' — '+e.note : ''}</div>`;
+    const detail = e.niggleNote || e.note;
+    return `<div style="margin-bottom:4px;"><b style="color:var(--z-power); font-family:'JetBrains Mono',monospace;">${label}</b>${detail ? ' — '+detail : ''}</div>`;
   }).join('');
 }
 
@@ -1462,7 +1467,7 @@ function refreshAllDayUI(){
     updateActualSummary(key);
     renderNiggleState(key);
     refreshGpxStatus(key);
-    ['dist','time','pace','hr','shoe','note'].forEach(f=>{
+    ['dist','time','pace','hr','shoe','note','niggleNote'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
     });
@@ -1557,6 +1562,7 @@ weeks.forEach(w=>{
         <div class="log-field"><label>Shoe</label><select data-field="shoe" data-key="${dateKey}"><option value="">—</option>${SHOE_OPTIONS}</select></div>
         <div class="log-field"><label>GPX file</label><input type="file" accept=".gpx,application/gpx+xml" data-field="gpx" data-key="${dateKey}"></div>
         <div class="log-field note"><label>Notes</label><input type="text" placeholder="how did it feel?" data-field="note" data-key="${dateKey}"></div>
+        <div class="log-field note"><label>Niggle note</label><input type="text" placeholder="what, where, how bad?" data-field="niggleNote" data-key="${dateKey}"></div>
         <div class="gpx-status" data-gpx-status="${dateKey}"></div>
       </div>
     `;
@@ -1599,6 +1605,10 @@ panelsEl.addEventListener('input', (e)=>{
   updateToggleLabel(el.dataset.key);
   if(field==='dist' || field==='time' || field==='pace' || field==='hr'){
     computeFitnessTrend();
+  }
+  if(field==='niggleNote'){
+    renderNiggleState(el.dataset.key);
+    renderNiggleWatch();
   }
 });
 panelsEl.addEventListener('change', (e)=>{
