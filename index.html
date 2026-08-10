@@ -482,6 +482,7 @@
         <span><i style="background:var(--z-lt1)"></i>build</span>
         <span><i style="background:var(--z-power)"></i>taper</span>
         <span><i style="background:var(--gold)"></i>race week</span>
+        <span><i style="background:var(--z-lt2)"></i>actual logged</span>
       </div>
     </div>
     <svg id="sparkline" viewBox="0 0 720 170" preserveAspectRatio="none"></svg>
@@ -837,6 +838,35 @@ weeks.forEach((w,i)=>{
   svg.appendChild(g);
 });
 
+const sparkActualGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+sparkActualGroup.setAttribute('id','sparkActualGroup');
+svg.appendChild(sparkActualGroup);
+function renderActualSpark(){
+  while(sparkActualGroup.firstChild) sparkActualGroup.removeChild(sparkActualGroup.firstChild);
+  const pts = weeks.map((w,i)=>({i, v: actualWeekKm(w)})).filter(p=>p.v>0);
+  if(pts.length===0) return;
+  const clampY = v => Math.max(padT, Math.min(padT+plotH, yFor(v)));
+  let d = '';
+  pts.forEach((p,idx)=>{
+    d += (idx===0?'M':'L') + xFor(p.i).toFixed(1)+','+clampY(p.v).toFixed(1)+' ';
+  });
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke','var(--z-lt2)');
+  path.setAttribute('stroke-width','2');
+  path.setAttribute('stroke-dasharray','5 4');
+  path.setAttribute('stroke-linecap','round');
+  sparkActualGroup.appendChild(path);
+  pts.forEach(p=>{
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx', xFor(p.i)); c.setAttribute('cy', clampY(p.v)); c.setAttribute('r',3.5);
+    c.setAttribute('fill','var(--z-lt2)');
+    c.setAttribute('stroke','#12151A'); c.setAttribute('stroke-width','1.5');
+    sparkActualGroup.appendChild(c);
+  });
+}
+
 // ---------- pace calculator (editable per-km splits) ----------
 function parseGoalTime(str){
   const m = String(str).trim().match(/^(\d{1,3}):([0-5]\d)$/);
@@ -1025,6 +1055,7 @@ function updateVolumeStats(){
     const el = document.getElementById('actualKm-'+w.num);
     if(el) el.textContent = fmtKm(actualWeekKm(w)) + ' km';
   });
+  renderActualSpark();
 }
 function parseBand(str){
   const parts = str.split('–').map(s=>s.trim());
