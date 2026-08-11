@@ -1263,7 +1263,7 @@ function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
   const e = getEntry(key);
-  btn.textContent = (e.dist || e.warmupKm || e.cooldownKm || e.time || e.pace || e.repsPace || e.recoveryPace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
+  btn.textContent = (e.dist || e.warmupKm || e.cooldownKm || e.time || e.warmupTime || e.cooldownTime || e.pace || e.repsPace || e.recoveryPace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1278,14 +1278,20 @@ function parseTimeStr(str){
   if(m) return (+m[1])*60 + (+m[2]);
   return null;
 }
-function recomputePace(key){
+function recomputePaceField(key, kmField, timeField, paceField){
   const entry = getEntry(key);
-  const dist = parseFloat(entry.dist);
-  const timeSec = parseTimeStr(entry.time);
+  const dist = parseFloat(entry[kmField]);
+  const timeSec = parseTimeStr(entry[timeField]);
   const paceStr = (dist>0 && timeSec>0) ? fmtPace(timeSec/dist) : '';
-  setEntryField(key, 'pace', paceStr);
-  const input = document.querySelector('[data-field="pace"][data-key="'+key+'"]');
+  setEntryField(key, paceField, paceStr);
+  const input = document.querySelector('[data-field="'+paceField+'"][data-key="'+key+'"]');
   if(input) input.value = paceStr;
+}
+function recomputePace(key){ recomputePaceField(key, 'dist', 'time', 'pace'); }
+function recomputeWarmupPace(key){ recomputePaceField(key, 'warmupKm', 'warmupTime', 'warmupPace'); }
+function recomputeCooldownPace(key){ recomputePaceField(key, 'cooldownKm', 'cooldownTime', 'cooldownPace'); }
+function actualDayTimeSec(entry){
+  return (parseTimeStr(entry.time)||0) + (parseTimeStr(entry.warmupTime)||0) + (parseTimeStr(entry.cooldownTime)||0);
 }
 function actualDayKm(entry){
   const d = parseFloat(entry.dist) || 0;
@@ -1320,7 +1326,7 @@ function updateActualSummary(key){
   const el = document.querySelector('.actual-summary[data-summary="'+key+'"]');
   if(!el || !meta) return;
   const entry = getEntry(key);
-  if(!entry.pace && !entry.repsPace && !entry.recoveryPace && !entry.dist && !entry.warmupKm && !entry.cooldownKm){ el.style.display='none'; el.textContent=''; return; }
+  if(!entry.pace && !entry.repsPace && !entry.recoveryPace && !entry.dist && !entry.warmupKm && !entry.cooldownKm && !entry.warmupTime && !entry.cooldownTime){ el.style.display='none'; el.textContent=''; return; }
   let cls = 'amber';
   // Reps pace (when logged) is what's compared to the target band — recoveries are deliberately
   // slow on interval days and drag the overall avg pace down, making it read slower than the work was.
@@ -1336,15 +1342,21 @@ function updateActualSummary(key){
       }
     }
   }
+  const hasWarmupOrCooldown = parseFloat(entry.warmupKm)>0 || parseFloat(entry.cooldownKm)>0;
   const parts = [];
   if(entry.dist) parts.push(entry.dist + ' km');
   if(parseFloat(entry.warmupKm)>0) parts.push('+' + entry.warmupKm + ' km w-up');
   if(parseFloat(entry.cooldownKm)>0) parts.push('+' + entry.cooldownKm + ' km c-down');
-  if((parseFloat(entry.warmupKm)>0 || parseFloat(entry.cooldownKm)>0)) parts.push('= ' + fmtKm(actualDayKm(entry)) + ' km total');
-  if(entry.time) parts.push('in ' + entry.time);
+  if(hasWarmupOrCooldown) parts.push('= ' + fmtKm(actualDayKm(entry)) + ' km total');
+  // Total time has to include w-up/c-down time too — otherwise this line reads as
+  // "X km total in Y" where Y was only ever the main session's time, not the total.
+  const totalTimeSec = actualDayTimeSec(entry);
+  if(totalTimeSec>0) parts.push('in ' + fmtClock(totalTimeSec) + (hasWarmupOrCooldown ? ' total' : ''));
   if(entry.pace) parts.push(entry.pace + '/km avg');
   if(entry.repsPace) parts.push(entry.repsPace + '/km reps');
   if(entry.recoveryPace) parts.push(entry.recoveryPace + '/km recovery');
+  if(entry.warmupPace) parts.push(entry.warmupPace + '/km w-up');
+  if(entry.cooldownPace) parts.push(entry.cooldownPace + '/km c-down');
   if(entry.hr) parts.push(entry.hr + ' bpm');
   if(entry.shoe) parts.push(entry.shoe);
   if(entry.gpxFileName) parts.push('📎 ' + entry.gpxFileName);
@@ -1519,7 +1531,7 @@ function refreshAllDayUI(){
     updateActualSummary(key);
     renderNiggleState(key);
     refreshGpxStatus(key);
-    ['dist','warmupKm','cooldownKm','time','pace','repsPace','recoveryPace','hr','shoe','note','niggleNote'].forEach(f=>{
+    ['dist','warmupKm','cooldownKm','time','warmupTime','cooldownTime','pace','warmupPace','cooldownPace','repsPace','recoveryPace','hr','shoe','note','niggleNote'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
     });
@@ -1608,12 +1620,16 @@ weeks.forEach(w=>{
       </div>
       <div class="log-form" data-form="${dateKey}">
         <div class="log-field"><label>Distance</label><input type="text" inputmode="decimal" placeholder="km" data-field="dist" data-key="${dateKey}"></div>
-        <div class="log-field"><label>Warm-up</label><input type="text" inputmode="decimal" placeholder="km" data-field="warmupKm" data-key="${dateKey}"></div>
-        <div class="log-field"><label>Cool-down</label><input type="text" inputmode="decimal" placeholder="km" data-field="cooldownKm" data-key="${dateKey}"></div>
         <div class="log-field"><label>Time</label><input type="text" placeholder="mm:ss" data-field="time" data-key="${dateKey}"></div>
         <div class="log-field"><label>Avg pace</label><input type="text" placeholder="auto" data-field="pace" data-key="${dateKey}" readonly></div>
         <div class="log-field"><label>Reps pace</label><input type="text" placeholder="mm:ss" data-field="repsPace" data-key="${dateKey}"></div>
         <div class="log-field"><label>Recovery pace</label><input type="text" placeholder="mm:ss" data-field="recoveryPace" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Warm-up</label><input type="text" inputmode="decimal" placeholder="km" data-field="warmupKm" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Warm-up time</label><input type="text" placeholder="mm:ss" data-field="warmupTime" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Warm-up pace</label><input type="text" placeholder="auto" data-field="warmupPace" data-key="${dateKey}" readonly></div>
+        <div class="log-field"><label>Cool-down</label><input type="text" inputmode="decimal" placeholder="km" data-field="cooldownKm" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Cool-down time</label><input type="text" placeholder="mm:ss" data-field="cooldownTime" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Cool-down pace</label><input type="text" placeholder="auto" data-field="cooldownPace" data-key="${dateKey}" readonly></div>
         <div class="log-field"><label>Avg HR</label><input type="text" placeholder="bpm" data-field="hr" data-key="${dateKey}"></div>
         <div class="log-field"><label>Shoe</label><select data-field="shoe" data-key="${dateKey}"><option value="">—</option>${SHOE_OPTIONS}</select></div>
         <div class="log-field"><label>GPX file</label><input type="file" accept=".gpx,application/gpx+xml" data-field="gpx" data-key="${dateKey}"></div>
@@ -1651,12 +1667,18 @@ panelsEl.addEventListener('input', (e)=>{
   const el = e.target;
   if(!el.dataset || !el.dataset.field) return;
   const field = el.dataset.field;
-  if(field==='pace') return; // pace is derived from distance + time, not directly editable
+  if(field==='pace' || field==='warmupPace' || field==='cooldownPace') return; // pace is derived from distance + time, not directly editable
   setEntryField(el.dataset.key, field, el.value);
   if(field==='dist' || field==='time'){
     recomputePace(el.dataset.key);
   }
-  if(field==='dist' || field==='time' || field==='warmupKm' || field==='cooldownKm'){
+  if(field==='warmupKm' || field==='warmupTime'){
+    recomputeWarmupPace(el.dataset.key);
+  }
+  if(field==='cooldownKm' || field==='cooldownTime'){
+    recomputeCooldownPace(el.dataset.key);
+  }
+  if(field==='dist' || field==='time' || field==='warmupKm' || field==='warmupTime' || field==='cooldownKm' || field==='cooldownTime'){
     updateVolumeStats();
   }
   updateActualSummary(el.dataset.key);
