@@ -877,75 +877,104 @@ Object.keys(ZONE_LABELS).forEach(k=>{
 });
 
 // ---------- sparkline ----------
+// The whole chart (planned line + actual overlay) is rebuilt from scratch on
+// every log change via renderSparkline(), rather than only patching the
+// actual overlay in place. The y-domain used to be fixed to the planned
+// weekly totals only, so a week's actual dot — which starts near 0 and
+// climbs as sessions get logged through the week — sat clamped to the very
+// bottom of the chart (indistinguishable from any other low value) until it
+// finally climbed past the planned range; that read as "the dot doesn't
+// update". Recomputing the domain to also span logged actual totals means
+// the actual dot moves proportionally from the first logged session.
 const svg = document.getElementById('sparkline');
 const W=720,H=170, padL=8,padR=8,padT=18,padB=28;
 const plotW=W-padL-padR, plotH=H-padT-padB;
-const minV=Math.min(...allTotals)-3, maxV=Math.max(...allTotals)+3;
+let minV, maxV;
 function xFor(i){ return padL + (i/(weeks.length-1))*plotW; }
 function yFor(v){ return padT + (1-(v-minV)/(maxV-minV))*plotH; }
 
-let pathD='';
-weeks.forEach((w,i)=>{
-  const x=xFor(i), y=yFor(allTotals[i]);
-  pathD += (i===0? 'M':'L') + x.toFixed(1)+','+y.toFixed(1)+' ';
-});
+let selectedWeekNum = null;
+function highlightSparkWeek(num){
+  document.querySelectorAll('.spark-label[id^="spark-label-"]').forEach(l=> l.classList.toggle('active', l.id==='spark-label-'+num));
+}
 
-const pathEl = document.createElementNS('http://www.w3.org/2000/svg','path');
-pathEl.setAttribute('d', pathD);
-pathEl.setAttribute('fill','none');
-pathEl.setAttribute('stroke','#3A4150');
-pathEl.setAttribute('stroke-width','1.5');
-svg.appendChild(pathEl);
+let sparkActualGroup = null;
 
-weeks.forEach((w,i)=>{
-  const x=xFor(i), y=yFor(allTotals[i]);
-  const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-  g.setAttribute('class','spark-pt');
-  g.setAttribute('data-week', w.num);
+function renderSparkline(){
+  const actualPositive = weeks.map(actualWeekKm).filter(v=>v>0);
+  const domainValues = allTotals.concat(actualPositive);
+  minV = Math.min(...domainValues)-3;
+  maxV = Math.max(...domainValues)+3;
 
-  const vLine = document.createElementNS('http://www.w3.org/2000/svg','line');
-  vLine.setAttribute('x1',x); vLine.setAttribute('x2',x);
-  vLine.setAttribute('y1',y); vLine.setAttribute('y2',padT+plotH+6);
-  vLine.setAttribute('stroke','#232833'); vLine.setAttribute('stroke-width','1');
-  g.appendChild(vLine);
+  svg.innerHTML = '';
 
-  const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-  c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r', w.phase==='Race Week'?5:4);
-  c.setAttribute('fill', phaseColorVar(w.phase));
-  c.setAttribute('stroke', '#12151A'); c.setAttribute('stroke-width','2');
-  g.appendChild(c);
+  let pathD='';
+  weeks.forEach((w,i)=>{
+    const x=xFor(i), y=yFor(allTotals[i]);
+    pathD += (i===0? 'M':'L') + x.toFixed(1)+','+y.toFixed(1)+' ';
+  });
 
-  const t = document.createElementNS('http://www.w3.org/2000/svg','text');
-  t.setAttribute('x',x); t.setAttribute('y', H-6);
-  t.setAttribute('text-anchor','middle');
-  t.setAttribute('class','spark-label');
-  t.setAttribute('id', 'spark-label-'+w.num);
-  t.textContent = 'W'+w.num;
-  g.appendChild(t);
+  const pathEl = document.createElementNS('http://www.w3.org/2000/svg','path');
+  pathEl.setAttribute('d', pathD);
+  pathEl.setAttribute('fill','none');
+  pathEl.setAttribute('stroke','#3A4150');
+  pathEl.setAttribute('stroke-width','1.5');
+  svg.appendChild(pathEl);
 
-  const kmLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
-  kmLabel.setAttribute('x',x); kmLabel.setAttribute('y', y-10);
-  kmLabel.setAttribute('text-anchor','middle');
-  kmLabel.setAttribute('class','spark-label');
-  kmLabel.setAttribute('fill', '#8891A0');
-  kmLabel.textContent = fmtKm(allTotals[i]);
-  g.appendChild(kmLabel);
+  weeks.forEach((w,i)=>{
+    const x=xFor(i), y=yFor(allTotals[i]);
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','spark-pt');
+    g.setAttribute('data-week', w.num);
 
-  g.addEventListener('click', ()=>selectWeek(w.num));
-  svg.appendChild(g);
-});
+    const vLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+    vLine.setAttribute('x1',x); vLine.setAttribute('x2',x);
+    vLine.setAttribute('y1',y); vLine.setAttribute('y2',padT+plotH+6);
+    vLine.setAttribute('stroke','#232833'); vLine.setAttribute('stroke-width','1');
+    g.appendChild(vLine);
 
-const sparkActualGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
-sparkActualGroup.setAttribute('id','sparkActualGroup');
-svg.appendChild(sparkActualGroup);
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r', w.phase==='Race Week'?5:4);
+    c.setAttribute('fill', phaseColorVar(w.phase));
+    c.setAttribute('stroke', '#12151A'); c.setAttribute('stroke-width','2');
+    g.appendChild(c);
+
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',x); t.setAttribute('y', H-6);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('class','spark-label');
+    t.setAttribute('id', 'spark-label-'+w.num);
+    t.textContent = 'W'+w.num;
+    g.appendChild(t);
+
+    const kmLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
+    kmLabel.setAttribute('x',x); kmLabel.setAttribute('y', y-10);
+    kmLabel.setAttribute('text-anchor','middle');
+    kmLabel.setAttribute('class','spark-label');
+    kmLabel.setAttribute('fill', '#8891A0');
+    kmLabel.textContent = fmtKm(allTotals[i]);
+    g.appendChild(kmLabel);
+
+    g.addEventListener('click', ()=>selectWeek(w.num));
+    svg.appendChild(g);
+  });
+
+  sparkActualGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+  sparkActualGroup.setAttribute('id','sparkActualGroup');
+  svg.appendChild(sparkActualGroup);
+  renderActualSpark();
+
+  if(selectedWeekNum != null) highlightSparkWeek(selectedWeekNum);
+}
+
 function renderActualSpark(){
+  if(!sparkActualGroup) return;
   while(sparkActualGroup.firstChild) sparkActualGroup.removeChild(sparkActualGroup.firstChild);
   const pts = weeks.map((w,i)=>({i, v: actualWeekKm(w)})).filter(p=>p.v>0);
   if(pts.length===0) return;
-  const clampY = v => Math.max(padT, Math.min(padT+plotH, yFor(v)));
   let d = '';
   pts.forEach((p,idx)=>{
-    d += (idx===0?'M':'L') + xFor(p.i).toFixed(1)+','+clampY(p.v).toFixed(1)+' ';
+    d += (idx===0?'M':'L') + xFor(p.i).toFixed(1)+','+yFor(p.v).toFixed(1)+' ';
   });
   const path = document.createElementNS('http://www.w3.org/2000/svg','path');
   path.setAttribute('d', d);
@@ -956,11 +985,20 @@ function renderActualSpark(){
   path.setAttribute('stroke-linecap','round');
   sparkActualGroup.appendChild(path);
   pts.forEach(p=>{
+    const y = yFor(p.v);
     const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    c.setAttribute('cx', xFor(p.i)); c.setAttribute('cy', clampY(p.v)); c.setAttribute('r',3.5);
+    c.setAttribute('cx', xFor(p.i)); c.setAttribute('cy', y); c.setAttribute('r',3.5);
     c.setAttribute('fill','var(--z-lt2)');
     c.setAttribute('stroke','#12151A'); c.setAttribute('stroke-width','1.5');
     sparkActualGroup.appendChild(c);
+
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('x', xFor(p.i)); lbl.setAttribute('y', y-8);
+    lbl.setAttribute('text-anchor','middle');
+    lbl.setAttribute('class','spark-label');
+    lbl.style.fill = 'var(--z-lt2)'; // inline style so it wins over the .spark-label CSS rule (fill attr alone would lose to it)
+    lbl.textContent = fmtKm(p.v);
+    sparkActualGroup.appendChild(lbl);
   });
 }
 
@@ -1225,7 +1263,7 @@ function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
   const e = getEntry(key);
-  btn.textContent = (e.dist || e.time || e.pace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
+  btn.textContent = (e.dist || e.warmupKm || e.cooldownKm || e.time || e.pace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1249,11 +1287,16 @@ function recomputePace(key){
   const input = document.querySelector('[data-field="pace"][data-key="'+key+'"]');
   if(input) input.value = paceStr;
 }
+function actualDayKm(entry){
+  const d = parseFloat(entry.dist) || 0;
+  const wu = parseFloat(entry.warmupKm) || 0;
+  const cd = parseFloat(entry.cooldownKm) || 0;
+  return d + wu + cd;
+}
 function actualWeekKm(w){
   let sum = 0;
   w.days.forEach((day,i)=>{
-    const d = parseFloat(getEntry(dateKeyFor(w.start, i)).dist);
-    if(!isNaN(d) && d>0) sum += d;
+    sum += actualDayKm(getEntry(dateKeyFor(w.start, i)));
   });
   return sum;
 }
@@ -1265,7 +1308,7 @@ function updateVolumeStats(){
     const el = document.getElementById('actualKm-'+w.num);
     if(el) el.textContent = fmtKm(actualWeekKm(w)) + ' km';
   });
-  renderActualSpark();
+  renderSparkline();
 }
 function parseBand(str){
   const parts = str.split('–').map(s=>s.trim());
@@ -1277,7 +1320,7 @@ function updateActualSummary(key){
   const el = document.querySelector('.actual-summary[data-summary="'+key+'"]');
   if(!el || !meta) return;
   const entry = getEntry(key);
-  if(!entry.pace && !entry.dist){ el.style.display='none'; el.textContent=''; return; }
+  if(!entry.pace && !entry.dist && !entry.warmupKm && !entry.cooldownKm){ el.style.display='none'; el.textContent=''; return; }
   let cls = 'amber';
   if(entry.pace){
     const actualSec = parsePaceStr(entry.pace);
@@ -1292,6 +1335,9 @@ function updateActualSummary(key){
   }
   const parts = [];
   if(entry.dist) parts.push(entry.dist + ' km');
+  if(parseFloat(entry.warmupKm)>0) parts.push('+' + entry.warmupKm + ' km w-up');
+  if(parseFloat(entry.cooldownKm)>0) parts.push('+' + entry.cooldownKm + ' km c-down');
+  if((parseFloat(entry.warmupKm)>0 || parseFloat(entry.cooldownKm)>0)) parts.push('= ' + fmtKm(actualDayKm(entry)) + ' km total');
   if(entry.time) parts.push('in ' + entry.time);
   if(entry.pace) parts.push(entry.pace + '/km avg');
   if(entry.hr) parts.push(entry.hr + ' bpm');
@@ -1467,7 +1513,7 @@ function refreshAllDayUI(){
     updateActualSummary(key);
     renderNiggleState(key);
     refreshGpxStatus(key);
-    ['dist','time','pace','hr','shoe','note','niggleNote'].forEach(f=>{
+    ['dist','warmupKm','cooldownKm','time','pace','hr','shoe','note','niggleNote'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
     });
@@ -1556,6 +1602,8 @@ weeks.forEach(w=>{
       </div>
       <div class="log-form" data-form="${dateKey}">
         <div class="log-field"><label>Distance</label><input type="text" inputmode="decimal" placeholder="km" data-field="dist" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Warm-up</label><input type="text" inputmode="decimal" placeholder="km" data-field="warmupKm" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Cool-down</label><input type="text" inputmode="decimal" placeholder="km" data-field="cooldownKm" data-key="${dateKey}"></div>
         <div class="log-field"><label>Time</label><input type="text" placeholder="mm:ss" data-field="time" data-key="${dateKey}"></div>
         <div class="log-field"><label>Avg pace</label><input type="text" placeholder="auto" data-field="pace" data-key="${dateKey}" readonly></div>
         <div class="log-field"><label>Avg HR</label><input type="text" placeholder="bpm" data-field="hr" data-key="${dateKey}"></div>
@@ -1599,6 +1647,8 @@ panelsEl.addEventListener('input', (e)=>{
   setEntryField(el.dataset.key, field, el.value);
   if(field==='dist' || field==='time'){
     recomputePace(el.dataset.key);
+  }
+  if(field==='dist' || field==='time' || field==='warmupKm' || field==='cooldownKm'){
     updateVolumeStats();
   }
   updateActualSummary(el.dataset.key);
@@ -1625,9 +1675,10 @@ panelsEl.addEventListener('change', (e)=>{
 });
 
 function selectWeek(num){
+  selectedWeekNum = num;
   document.querySelectorAll('.tab').forEach(t=> t.classList.toggle('active', +t.dataset.week===num));
   document.querySelectorAll('.week-panel').forEach(p=> p.classList.toggle('active', p.id==='panel-'+num));
-  document.querySelectorAll('.spark-label[id^="spark-label-"]').forEach(l=> l.classList.toggle('active', l.id==='spark-label-'+num));
+  highlightSparkWeek(num);
 }
 
 // ---------- default week: whichever contains today, else W1, else W9 ----------
