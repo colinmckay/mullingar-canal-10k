@@ -1263,7 +1263,7 @@ function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
   const e = getEntry(key);
-  btn.textContent = (e.dist || e.warmupKm || e.cooldownKm || e.time || e.pace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
+  btn.textContent = (e.dist || e.warmupKm || e.cooldownKm || e.time || e.pace || e.repsPace || e.recoveryPace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1320,10 +1320,13 @@ function updateActualSummary(key){
   const el = document.querySelector('.actual-summary[data-summary="'+key+'"]');
   if(!el || !meta) return;
   const entry = getEntry(key);
-  if(!entry.pace && !entry.dist && !entry.warmupKm && !entry.cooldownKm){ el.style.display='none'; el.textContent=''; return; }
+  if(!entry.pace && !entry.repsPace && !entry.recoveryPace && !entry.dist && !entry.warmupKm && !entry.cooldownKm){ el.style.display='none'; el.textContent=''; return; }
   let cls = 'amber';
-  if(entry.pace){
-    const actualSec = parsePaceStr(entry.pace);
+  // Reps pace (when logged) is what's compared to the target band — recoveries are deliberately
+  // slow on interval days and drag the overall avg pace down, making it read slower than the work was.
+  const paceForBand = entry.repsPace || entry.pace;
+  if(paceForBand){
+    const actualSec = parsePaceStr(paceForBand);
     if(actualSec!=null){
       const band = meta.isRace ? [GOAL_PACE_SEC-6, GOAL_PACE_SEC+6] : parseBand(ZONE_PACE[meta.type] || '');
       if(band && band[0]!=null && band[1]!=null){
@@ -1340,6 +1343,8 @@ function updateActualSummary(key){
   if((parseFloat(entry.warmupKm)>0 || parseFloat(entry.cooldownKm)>0)) parts.push('= ' + fmtKm(actualDayKm(entry)) + ' km total');
   if(entry.time) parts.push('in ' + entry.time);
   if(entry.pace) parts.push(entry.pace + '/km avg');
+  if(entry.repsPace) parts.push(entry.repsPace + '/km reps');
+  if(entry.recoveryPace) parts.push(entry.recoveryPace + '/km recovery');
   if(entry.hr) parts.push(entry.hr + ' bpm');
   if(entry.shoe) parts.push(entry.shoe);
   if(entry.gpxFileName) parts.push('📎 ' + entry.gpxFileName);
@@ -1463,8 +1468,9 @@ function computeFitnessTrend(){
     const meta = dayMeta[key];
     if(meta.type === 'raceday') return; // the race itself isn't a training data point
     const entry = getEntry(key);
-    if(entry.pace){
-      const actualSec = parsePaceStr(entry.pace);
+    const paceForBand = entry.repsPace || entry.pace;
+    if(paceForBand){
+      const actualSec = parsePaceStr(paceForBand);
       if(actualSec!=null){
         let targetSec;
         if(meta.isRace){
@@ -1513,7 +1519,7 @@ function refreshAllDayUI(){
     updateActualSummary(key);
     renderNiggleState(key);
     refreshGpxStatus(key);
-    ['dist','warmupKm','cooldownKm','time','pace','hr','shoe','note','niggleNote'].forEach(f=>{
+    ['dist','warmupKm','cooldownKm','time','pace','repsPace','recoveryPace','hr','shoe','note','niggleNote'].forEach(f=>{
       const input = document.querySelector('[data-field="'+f+'"][data-key="'+key+'"]');
       if(input) input.value = entry[f] != null ? entry[f] : '';
     });
@@ -1606,6 +1612,8 @@ weeks.forEach(w=>{
         <div class="log-field"><label>Cool-down</label><input type="text" inputmode="decimal" placeholder="km" data-field="cooldownKm" data-key="${dateKey}"></div>
         <div class="log-field"><label>Time</label><input type="text" placeholder="mm:ss" data-field="time" data-key="${dateKey}"></div>
         <div class="log-field"><label>Avg pace</label><input type="text" placeholder="auto" data-field="pace" data-key="${dateKey}" readonly></div>
+        <div class="log-field"><label>Reps pace</label><input type="text" placeholder="mm:ss" data-field="repsPace" data-key="${dateKey}"></div>
+        <div class="log-field"><label>Recovery pace</label><input type="text" placeholder="mm:ss" data-field="recoveryPace" data-key="${dateKey}"></div>
         <div class="log-field"><label>Avg HR</label><input type="text" placeholder="bpm" data-field="hr" data-key="${dateKey}"></div>
         <div class="log-field"><label>Shoe</label><select data-field="shoe" data-key="${dateKey}"><option value="">—</option>${SHOE_OPTIONS}</select></div>
         <div class="log-field"><label>GPX file</label><input type="file" accept=".gpx,application/gpx+xml" data-field="gpx" data-key="${dateKey}"></div>
@@ -1653,7 +1661,7 @@ panelsEl.addEventListener('input', (e)=>{
   }
   updateActualSummary(el.dataset.key);
   updateToggleLabel(el.dataset.key);
-  if(field==='dist' || field==='time' || field==='pace' || field==='hr'){
+  if(field==='dist' || field==='time' || field==='pace' || field==='repsPace' || field==='hr'){
     computeFitnessTrend();
   }
   if(field==='niggleNote'){
