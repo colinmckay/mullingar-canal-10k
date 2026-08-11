@@ -350,6 +350,24 @@
   }
   .niggle-btn:hover{border-color:var(--z-power); color:var(--z-power);}
   .niggle-btn.active{background:var(--z-power); border-color:var(--z-power); color:var(--ink);}
+  .drag-handle{
+    position:relative; width:28px; height:28px; flex:none;
+    background:transparent; border:1px solid var(--line); border-radius:6px;
+    cursor:grab; touch-action:none; user-select:none; padding:0;
+  }
+  .drag-handle::before{
+    content:''; position:absolute; top:50%; left:50%; width:2px; height:2px; border-radius:50%;
+    background:var(--text-faint); transform:translate(-50%,-50%);
+    box-shadow:-5px -6px 0 var(--text-faint), 5px -6px 0 var(--text-faint),
+      -5px 0 0 var(--text-faint), 5px 0 0 var(--text-faint),
+      -5px 6px 0 var(--text-faint), 5px 6px 0 var(--text-faint);
+  }
+  .drag-handle:hover{border-color:var(--z-lt2);}
+  .drag-handle:active{cursor:grabbing;}
+  .drag-handle[data-drag-disabled="true"]{opacity:.3; cursor:not-allowed; pointer-events:none;}
+  .day-row.dragging{opacity:.45;}
+  .day-row.drop-target{outline:2px solid var(--z-lt2); outline-offset:-2px; border-radius:8px; background:rgba(63,179,123,.08);}
+  .day-row.drop-invalid{outline:2px dashed var(--z-race); outline-offset:-2px; border-radius:8px;}
   .actual-summary{font-size:11px; font-family:'JetBrains Mono',monospace; margin-top:2px; flex-basis:100%; display:none;}
   .actual-summary.good{color:var(--z-lt2);}
   .actual-summary.amber{color:var(--z-power);}
@@ -1259,11 +1277,14 @@ function renderDoneState(key){
   btn.classList.toggle('done', done);
   btn.textContent = done ? '✓' : '';
 }
+function hasLoggedEntry(key){
+  const e = getEntry(key);
+  return !!(e.dist || e.warmupKm || e.cooldownKm || e.time || e.warmupTime || e.cooldownTime || e.pace || e.repsPace || e.recoveryPace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote);
+}
 function updateToggleLabel(key){
   const btn = document.querySelector('.log-toggle[data-toggle="'+key+'"]');
   if(!btn) return;
-  const e = getEntry(key);
-  btn.textContent = (e.dist || e.warmupKm || e.cooldownKm || e.time || e.warmupTime || e.cooldownTime || e.pace || e.repsPace || e.recoveryPace || e.hr || e.shoe || e.note || e.gpxFileName || e.niggleNote) ? 'edit log' : 'log run';
+  btn.textContent = hasLoggedEntry(key) ? 'edit log' : 'log run';
 }
 function parsePaceStr(str){
   const m = String(str).trim().match(/^(\d{1,2}):([0-5]\d)$/);
@@ -1556,6 +1577,101 @@ function dateKeyFor(startStr, i){
   return new Date(Date.UTC(y, m-1, d) + i*MS_DAY).toISOString().slice(0,10);
 }
 
+// ---------- session drag-and-drop (swap two days within the same week) ----------
+// Rescheduling only ever swaps which day each session sits on — the plan's weekly
+// totals are a sum of the same days either way, so nothing downstream (weekly
+// volume, sparkline, ICS export) needs to know a swap happened; it just reads
+// whatever w.days currently says. The chosen order is stored under a reserved
+// key inside runLog so it rides along on the existing localStorage/cloud sync.
+function getWeekOrder(weekNum){
+  const stored = runLog.__sessionOrder && runLog.__sessionOrder[weekNum];
+  const size = weeks[weekNum-1]._origDays.length;
+  return (Array.isArray(stored) && stored.length===size) ? stored.slice() : weeks[weekNum-1]._origDays.map((_,idx)=>idx);
+}
+function setWeekOrder(weekNum, order){
+  runLog.__sessionOrder = runLog.__sessionOrder || {};
+  runLog.__sessionOrder[weekNum] = order;
+  saveLog();
+}
+function applyWeekOrder(w){
+  w.days = getWeekOrder(w.num).map(idx => w._origDays[idx]);
+}
+weeks.forEach(w=>{ w._origDays = w.days; applyWeekOrder(w); });
+
+function isDayDraggable(weekNum, i){
+  const w = weeks[weekNum-1];
+  if(!w || !w.days[i]) return false;
+  if(w.days[i].type === 'raceday') return false;
+  return !hasLoggedEntry(dateKeyFor(w.start, i));
+}
+function swapDaySessions(weekNum, i, j){
+  if(i===j || !isDayDraggable(weekNum, i) || !isDayDraggable(weekNum, j)) return;
+  const w = weeks[weekNum-1];
+  const order = getWeekOrder(weekNum);
+  const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+  setWeekOrder(weekNum, order);
+  applyWeekOrder(w);
+  renderDayList(w);
+  refreshAllDayUI();
+  generateCoachNote();
+}
+
+let dragCtx = null;
+function dayRowPosition(row){
+  const panel = row.closest('.week-panel');
+  const weekNum = panel ? +panel.id.slice('panel-'.length) : null;
+  const list = panel && panel.querySelector('.day-list');
+  const index = list ? Array.prototype.indexOf.call(list.children, row) : -1;
+  return { weekNum, index };
+}
+function clearDropClasses(row){
+  if(row) row.classList.remove('drop-target','drop-invalid');
+}
+function endDrag(cancelled){
+  const ctx = dragCtx;
+  dragCtx = null;
+  if(!ctx) return;
+  ctx.sourceRow.classList.remove('dragging');
+  clearDropClasses(ctx.targetRow);
+  try{ ctx.handle.releasePointerCapture(ctx.pointerId); }catch(err){}
+  if(!cancelled && ctx.targetValid){
+    swapDaySessions(ctx.weekNum, ctx.sourceIndex, ctx.targetIndex);
+  }
+}
+panelsEl.addEventListener('pointerdown', (e)=>{
+  const handle = e.target.closest('.drag-handle');
+  if(!handle || handle.dataset.dragDisabled==='true') return;
+  const row = handle.closest('.day-row');
+  if(!row) return;
+  e.preventDefault();
+  const { weekNum, index } = dayRowPosition(row);
+  dragCtx = { pointerId:e.pointerId, handle, weekNum, sourceIndex:index, sourceRow:row, targetRow:null, targetIndex:null, targetValid:false };
+  row.classList.add('dragging');
+  handle.setPointerCapture(e.pointerId);
+});
+panelsEl.addEventListener('pointermove', (e)=>{
+  if(!dragCtx || e.pointerId!==dragCtx.pointerId) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const row = el && el.closest('.day-row');
+  if(dragCtx.targetRow && dragCtx.targetRow!==row) clearDropClasses(dragCtx.targetRow);
+  dragCtx.targetRow = (row && row!==dragCtx.sourceRow) ? row : null;
+  if(!dragCtx.targetRow){ dragCtx.targetValid = false; return; }
+  const { weekNum, index } = dayRowPosition(dragCtx.targetRow);
+  const valid = weekNum===dragCtx.weekNum && isDayDraggable(weekNum, index) && isDayDraggable(dragCtx.weekNum, dragCtx.sourceIndex);
+  dragCtx.targetRow.classList.toggle('drop-target', valid);
+  dragCtx.targetRow.classList.toggle('drop-invalid', !valid);
+  dragCtx.targetIndex = index;
+  dragCtx.targetValid = valid;
+});
+panelsEl.addEventListener('pointerup', (e)=>{
+  if(!dragCtx || e.pointerId!==dragCtx.pointerId) return;
+  endDrag(false);
+});
+panelsEl.addEventListener('pointercancel', (e)=>{
+  if(!dragCtx || e.pointerId!==dragCtx.pointerId) return;
+  endDrag(true);
+});
+
 weeks.forEach(w=>{
   const tab = document.createElement('button');
   tab.className = 'tab' + (w.phase==='Race Week' ? ' is-race' : '');
@@ -1585,7 +1701,14 @@ weeks.forEach(w=>{
     <div class="day-list"></div>
   `;
 
+  panelsEl.appendChild(panel);
+  renderDayList(w);
+});
+
+function renderDayList(w){
+  const panel = document.getElementById('panel-'+w.num);
   const list = panel.querySelector('.day-list');
+  list.innerHTML = '';
   w.days.forEach((day,i)=>{
     const dateKey = dateKeyFor(w.start, i);
     dayMeta[dateKey] = { type: day.type, adjustedKm: adjustedDayKm(day), isRace: (day.type==='race' || day.type==='raceday'), weekNum: w.num };
@@ -1596,6 +1719,8 @@ weeks.forEach(w=>{
     const paceText = (day.type==='race' || day.type==='raceday')
       ? `≈${GOAL_PACE_STR} /km`
       : `${ZONE_PACE[day.type]} /km`;
+    const draggable = isDayDraggable(w.num, i);
+    const dragTitle = day.type==='raceday' ? "Race day can't be moved" : (draggable ? 'Drag to move this session to another day this week' : "Can't move — this day already has a logged run");
     row.innerHTML = `
       <button class="day-check" data-key="${dateKey}" aria-label="Mark ${day.name} done"></button>
       <div class="day-date"><div class="dnum">${day.d}</div><div class="dow">${day.dow}</div></div>
@@ -1614,6 +1739,7 @@ weeks.forEach(w=>{
         <div class="day-km">${fmtKm(day.km)} km</div>
         ${day.key ? `<div class="day-km-bracket">(${fmtKm(adjustedDayKm(day))} km w/ w-up+c-down)</div>` : ''}
         <div class="day-right-actions">
+          <button type="button" class="drag-handle" data-drag="${dateKey}" ${draggable ? '' : 'data-drag-disabled="true"'} aria-label="${dragTitle}" title="${dragTitle}"></button>
           <button class="log-toggle" data-toggle="${dateKey}">log run</button>
           <button class="niggle-btn" data-niggle="${dateKey}" aria-label="Flag a niggle" title="Flag a niggle">&#9888;</button>
         </div>
@@ -1640,9 +1766,7 @@ weeks.forEach(w=>{
     `;
     list.appendChild(row);
   });
-
-  panelsEl.appendChild(panel);
-});
+}
 
 refreshAllDayUI();
 
@@ -1856,6 +1980,9 @@ async function setupSync(){
           // Cloud copy exists — it wins (most recently synced device is source of truth).
           runLog = snap.data().data;
           saveLocalLog();
+          // The cloud copy may carry a different session order (e.g. a swap made on
+          // another device) than what's currently rendered from the pre-sync local copy.
+          weeks.forEach(w=>{ applyWeekOrder(w); renderDayList(w); });
         } else {
           // First time this account has synced — push up whatever is local.
           await fb.setDoc(fb.doc(fb.db, 'users', user.uid, 'plan', CLOUD_DOC_ID), { data: runLog, updatedAt: Date.now() });
