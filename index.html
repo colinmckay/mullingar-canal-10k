@@ -1576,6 +1576,12 @@ function dateKeyFor(startStr, i){
   const [y,m,d] = startStr.split('-').map(Number);
   return new Date(Date.UTC(y, m-1, d) + i*MS_DAY).toISOString().slice(0,10);
 }
+// Calendar date labels are derived from position (every week runs Monday—Sunday),
+// never from the day object itself — that object is what gets swapped when a
+// session is dragged to another day, so a date baked into it would move with the
+// session instead of staying put on the calendar day it actually belongs to.
+const DOW_LABELS = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+function dateOfMonthFor(startStr, i){ return +dateKeyFor(startStr, i).slice(-2); }
 
 // ---------- session drag-and-drop (swap two days within the same week) ----------
 // Rescheduling only ever swaps which day each session sits on — the plan's weekly
@@ -1723,7 +1729,7 @@ function renderDayList(w){
     const dragTitle = day.type==='raceday' ? "Race day can't be moved" : (draggable ? 'Drag to move this session to another day this week' : "Can't move — this day already has a logged run");
     row.innerHTML = `
       <button class="day-check" data-key="${dateKey}" aria-label="Mark ${day.name} done"></button>
-      <div class="day-date"><div class="dnum">${day.d}</div><div class="dow">${day.dow}</div></div>
+      <div class="day-date"><div class="dnum">${dateOfMonthFor(w.start, i)}</div><div class="dow">${DOW_LABELS[i]}</div></div>
       <div class="day-mid">
         <span class="zone-dot" style="background:${ZONE_COLORS[day.type]}"></span>
         <span class="day-name">${day.name}</span>
