@@ -368,6 +368,26 @@
   .day-row.dragging{opacity:.45;}
   .day-row.drop-target{outline:2px solid var(--z-lt2); outline-offset:-2px; border-radius:8px; background:rgba(63,179,123,.08);}
   .day-row.drop-invalid{outline:2px dashed var(--z-race); outline-offset:-2px; border-radius:8px;}
+  .edit-session-btn{
+    width:28px; height:28px; flex:none; font-size:12px; line-height:1;
+    background:transparent; border:1px solid var(--line); border-radius:6px; color:var(--text-faint); cursor:pointer;
+  }
+  .edit-session-btn:hover{border-color:var(--z-lt1); color:var(--z-lt1);}
+  .edit-session-btn.is-custom{border-color:var(--z-lt1); color:var(--z-lt1);}
+  .edit-session-btn[data-edit-disabled="true"]{opacity:.3; cursor:not-allowed; pointer-events:none;}
+  .session-form{
+    display:none; grid-column:1 / -1; background:var(--surface-2); border:1px solid var(--z-lt1); border-radius:8px;
+    padding:12px 14px; margin-top:2px; gap:10px; flex-wrap:wrap; align-items:flex-end;
+  }
+  .session-form.open{display:flex;}
+  .session-key-label{flex-direction:row !important; align-items:center; gap:6px !important; font-size:12px; color:var(--text-dim); text-transform:none; letter-spacing:0;}
+  .session-form-actions{display:flex; gap:8px; flex-basis:100%;}
+  .session-save-btn, .session-reset-btn{
+    background:transparent; border:1px solid var(--line); color:var(--text-faint);
+    font-family:'JetBrains Mono',monospace; font-size:10px; padding:5px 10px; border-radius:6px; cursor:pointer;
+  }
+  .session-save-btn:hover{border-color:var(--z-lt1); color:var(--z-lt1);}
+  .session-reset-btn:hover{border-color:var(--z-race); color:var(--z-race);}
   .actual-summary{font-size:11px; font-family:'JetBrains Mono',monospace; margin-top:2px; flex-basis:100%; display:none;}
   .actual-summary.good{color:var(--z-lt2);}
   .actual-summary.amber{color:var(--z-power);}
@@ -847,14 +867,22 @@ function phaseColorVar(phase){
 }
 
 // ---------- build stat strip ----------
-const listedTotals = weeks.map(totalKm);
-const allTotals = weeks.map(adjustedTotalKm); // adjusted = listed + warm-up/cool-down on KEY days
-const grandListed = listedTotals.reduce((a,b)=>a+b,0);
-const grandTotal = allTotals.reduce((a,b)=>a+b,0);
-document.getElementById('totalKmStat').innerHTML = fmtKm(grandTotal)+'<small>km</small>';
-document.getElementById('totalKmStat').closest('.stat').querySelector('.lbl').innerHTML = `Planned volume<span class="lbl2">${fmtKm(grandListed)} listed + ${fmtKm(grandTotal-grandListed)} w-up/c-down</span><span class="lbl2" id="totalKmActual">actual logged: 0 km</span>`;
-const peakIdx = allTotals.indexOf(Math.max(...allTotals));
-document.getElementById('peakStat').innerHTML = `W${weeks[peakIdx].num}<small> · ${fmtKm(allTotals[peakIdx])}km</small>`;
+// A custom session can change a week's km, so these totals (and the sparkline,
+// which reads the same allTotals/listedTotals bindings) have to be recomputable
+// rather than fixed at load — renderStatStrip() re-derives them from the current
+// (possibly customized) weeks data and is re-run after any session edit.
+let listedTotals, allTotals, grandListed, grandTotal, peakIdx;
+function renderStatStrip(){
+  listedTotals = weeks.map(totalKm);
+  allTotals = weeks.map(adjustedTotalKm); // adjusted = listed + warm-up/cool-down on KEY days
+  grandListed = listedTotals.reduce((a,b)=>a+b,0);
+  grandTotal = allTotals.reduce((a,b)=>a+b,0);
+  document.getElementById('totalKmStat').innerHTML = fmtKm(grandTotal)+'<small>km</small>';
+  document.getElementById('totalKmStat').closest('.stat').querySelector('.lbl').innerHTML = `Planned volume<span class="lbl2">${fmtKm(grandListed)} listed + ${fmtKm(grandTotal-grandListed)} w-up/c-down</span><span class="lbl2" id="totalKmActual">actual logged: 0 km</span>`;
+  peakIdx = allTotals.indexOf(Math.max(...allTotals));
+  document.getElementById('peakStat').innerHTML = `W${weeks[peakIdx].num}<small> · ${fmtKm(allTotals[peakIdx])}km</small>`;
+}
+renderStatStrip();
 
 const raceDate = new Date(PLAN_CONFIG.raceDateISO+'T00:00:00');
 const now = new Date();
@@ -1599,8 +1627,31 @@ function setWeekOrder(weekNum, order){
   runLog.__sessionOrder[weekNum] = order;
   saveLog();
 }
+// ---------- custom sessions ----------
+// A user-defined session replaces the plan's prescribed one for a given slot.
+// Overrides are keyed by the slot's ORIGINAL index (not its current position),
+// same as the order permutation above, so a customized session travels with
+// its day if it's later dragged elsewhere instead of snapping back to the plan.
+const SESSION_TYPE_OPTIONS = Object.keys(ZONE_LABELS)
+  .map(k=>`<option value="${k}">${ZONE_LABELS[k]}</option>`).join('');
+function hrForType(type){ return type==='race' ? 'pace' : ZONE_BPM[type]; }
+function getWeekOverrides(weekNum){
+  return (runLog.__sessionOverride && runLog.__sessionOverride[weekNum]) || {};
+}
+function setSessionOverride(weekNum, origIdx, override){
+  runLog.__sessionOverride = runLog.__sessionOverride || {};
+  if(override){
+    runLog.__sessionOverride[weekNum] = runLog.__sessionOverride[weekNum] || {};
+    runLog.__sessionOverride[weekNum][origIdx] = override;
+  } else if(runLog.__sessionOverride[weekNum]){
+    delete runLog.__sessionOverride[weekNum][origIdx];
+    if(Object.keys(runLog.__sessionOverride[weekNum]).length===0) delete runLog.__sessionOverride[weekNum];
+  }
+  saveLog();
+}
 function applyWeekOrder(w){
-  w.days = getWeekOrder(w.num).map(idx => w._origDays[idx]);
+  const overrides = getWeekOverrides(w.num);
+  w.days = getWeekOrder(w.num).map(idx => overrides[idx] ? Object.assign({}, w._origDays[idx], overrides[idx]) : w._origDays[idx]);
 }
 weeks.forEach(w=>{ w._origDays = w.days; applyWeekOrder(w); });
 
@@ -1618,8 +1669,29 @@ function swapDaySessions(weekNum, i, j){
   setWeekOrder(weekNum, order);
   applyWeekOrder(w);
   renderDayList(w);
+  refreshAllDayUI(); // also covers updateVolumeStats/generateCoachNote/computeFitnessTrend
+}
+function saveCustomSession(weekNum, i, fields){
+  if(!isDayDraggable(weekNum, i)) return;
+  const w = weeks[weekNum-1];
+  const origIdx = getWeekOrder(weekNum)[i];
+  setSessionOverride(weekNum, origIdx, fields);
+  applyWeekOrder(w);
+  renderWeekHeadStats(w);
+  renderStatStrip(); // km can change on a custom session, so the plan-wide totals need recomputing too
+  renderDayList(w);
   refreshAllDayUI();
-  generateCoachNote();
+}
+function resetCustomSession(weekNum, i){
+  if(!isDayDraggable(weekNum, i)) return;
+  const w = weeks[weekNum-1];
+  const origIdx = getWeekOrder(weekNum)[i];
+  setSessionOverride(weekNum, origIdx, null);
+  applyWeekOrder(w);
+  renderWeekHeadStats(w);
+  renderStatStrip();
+  renderDayList(w);
+  refreshAllDayUI();
 }
 
 let dragCtx = null;
@@ -1690,8 +1762,6 @@ weeks.forEach(w=>{
   panel.className = 'week-panel';
   panel.id = 'panel-'+w.num;
 
-  const keyCount = w.days.filter(d=>d.key).length;
-  const wListed = totalKm(w), wAdjusted = adjustedTotalKm(w);
   panel.innerHTML = `
     <div class="week-head">
       <div>
@@ -1699,17 +1769,30 @@ weeks.forEach(w=>{
         <div class="range">${weekRangeLabel(w.start)}</div>
       </div>
       <div class="week-meta">
-        <div><div class="m-num">${fmtKm(wAdjusted)} km</div><div class="m-lbl">planned${wAdjusted>wListed ? ` <span class="lbl2">(${fmtKm(wListed)} listed)</span>` : ''}</div></div>
+        <div><div class="m-num" id="plannedNum-${w.num}"></div><div class="m-lbl" id="plannedLbl-${w.num}"></div></div>
         <div><div class="m-num" id="actualKm-${w.num}">0 km</div><div class="m-lbl">actual</div></div>
-        <div><div class="m-num">${keyCount}</div><div class="m-lbl">key session${keyCount===1?'':'s'}</div></div>
+        <div><div class="m-num" id="keyCount-${w.num}"></div><div class="m-lbl" id="keyLbl-${w.num}"></div></div>
       </div>
     </div>
     <div class="day-list"></div>
   `;
 
   panelsEl.appendChild(panel);
+  renderWeekHeadStats(w);
   renderDayList(w);
 });
+
+// Distance and the key-session flag can change when a session is customized,
+// so the week header's planned-km/key-count stats need to be recomputed —
+// they aren't part of renderDayList since they live outside the day-list.
+function renderWeekHeadStats(w){
+  const keyCount = w.days.filter(d=>d.key).length;
+  const wListed = totalKm(w), wAdjusted = adjustedTotalKm(w);
+  document.getElementById('plannedNum-'+w.num).textContent = fmtKm(wAdjusted) + ' km';
+  document.getElementById('plannedLbl-'+w.num).innerHTML = 'planned' + (wAdjusted>wListed ? ` <span class="lbl2">(${fmtKm(wListed)} listed)</span>` : '');
+  document.getElementById('keyCount-'+w.num).textContent = keyCount;
+  document.getElementById('keyLbl-'+w.num).textContent = 'key session' + (keyCount===1?'':'s');
+}
 
 function renderDayList(w){
   const panel = document.getElementById('panel-'+w.num);
@@ -1725,8 +1808,11 @@ function renderDayList(w){
     const paceText = (day.type==='race' || day.type==='raceday')
       ? `≈${GOAL_PACE_STR} /km`
       : `${ZONE_PACE[day.type]} /km`;
-    const draggable = isDayDraggable(w.num, i);
+    const draggable = isDayDraggable(w.num, i); // same eligibility rule governs editing: not raceday, not already logged
     const dragTitle = day.type==='raceday' ? "Race day can't be moved" : (draggable ? 'Drag to move this session to another day this week' : "Can't move — this day already has a logged run");
+    const editTitle = day.type==='raceday' ? "Race day can't be customized" : (draggable ? 'Define your own session for this day' : "Can't edit — this day already has a logged run");
+    const origIdx = getWeekOrder(w.num)[i];
+    const isCustom = !!getWeekOverrides(w.num)[origIdx];
     row.innerHTML = `
       <button class="day-check" data-key="${dateKey}" aria-label="Mark ${day.name} done"></button>
       <div class="day-date"><div class="dnum">${dateOfMonthFor(w.start, i)}</div><div class="dow">${DOW_LABELS[i]}</div></div>
@@ -1746,8 +1832,20 @@ function renderDayList(w){
         ${day.key ? `<div class="day-km-bracket">(${fmtKm(adjustedDayKm(day))} km w/ w-up+c-down)</div>` : ''}
         <div class="day-right-actions">
           <button type="button" class="drag-handle" data-drag="${dateKey}" ${draggable ? '' : 'data-drag-disabled="true"'} aria-label="${dragTitle}" title="${dragTitle}"></button>
+          <button type="button" class="edit-session-btn${isCustom?' is-custom':''}" data-edit-session="${dateKey}" ${draggable ? '' : 'data-edit-disabled="true"'} aria-label="${editTitle}" title="${editTitle}">&#9998;</button>
           <button class="log-toggle" data-toggle="${dateKey}">log run</button>
           <button class="niggle-btn" data-niggle="${dateKey}" aria-label="Flag a niggle" title="Flag a niggle">&#9888;</button>
+        </div>
+      </div>
+      <div class="session-form" data-session-form="${dateKey}">
+        <div class="log-field note"><label>Name</label><input type="text" placeholder="session name" data-sfield="name" data-skey="${dateKey}"></div>
+        <div class="log-field note"><label>Detail</label><input type="text" placeholder="e.g. 5 × 1 km" data-sfield="detail" data-skey="${dateKey}"></div>
+        <div class="log-field"><label>Zone</label><select data-sfield="type" data-skey="${dateKey}">${SESSION_TYPE_OPTIONS}</select></div>
+        <div class="log-field"><label>Distance</label><input type="text" inputmode="decimal" placeholder="km" data-sfield="km" data-skey="${dateKey}"></div>
+        <div class="log-field"><label class="session-key-label"><input type="checkbox" data-sfield="key" data-skey="${dateKey}"> Key session</label></div>
+        <div class="session-form-actions">
+          <button type="button" class="session-save-btn" data-session-save="${dateKey}">Save session</button>
+          <button type="button" class="session-reset-btn" data-session-reset="${dateKey}" ${isCustom ? '' : 'style="display:none;"'}>Reset to plan</button>
         </div>
       </div>
       <div class="log-form" data-form="${dateKey}">
@@ -1770,6 +1868,13 @@ function renderDayList(w){
         <div class="gpx-status" data-gpx-status="${dateKey}"></div>
       </div>
     `;
+    const setSVal = (field, val) => { const el = row.querySelector('[data-sfield="'+field+'"]'); if(el) el.value = val; };
+    setSVal('name', day.name);
+    setSVal('detail', day.detail);
+    setSVal('type', day.type==='raceday' ? '' : day.type);
+    setSVal('km', day.km);
+    const keyEl = row.querySelector('[data-sfield="key"]');
+    if(keyEl) keyEl.checked = !!day.key;
     list.appendChild(row);
   });
 }
@@ -1792,6 +1897,38 @@ panelsEl.addEventListener('click', (e)=>{
   if(dl){ downloadGpx(dl.dataset.gpxDownload); return; }
   const rm = e.target.closest('[data-gpx-remove]');
   if(rm){ removeGpx(rm.dataset.gpxRemove); return; }
+  const editBtn = e.target.closest('.edit-session-btn');
+  if(editBtn){
+    if(editBtn.dataset.editDisabled==='true') return;
+    const form = document.querySelector('.session-form[data-session-form="'+editBtn.dataset.editSession+'"]');
+    if(form) form.classList.toggle('open');
+    return;
+  }
+  const saveBtn = e.target.closest('[data-session-save]');
+  if(saveBtn){
+    const key = saveBtn.dataset.sessionSave;
+    const meta = dayMeta[key];
+    if(!meta) return;
+    const form = saveBtn.closest('.session-form');
+    const val = f => form.querySelector('[data-sfield="'+f+'"]').value;
+    const name = val('name').trim();
+    const km = parseFloat(val('km'));
+    if(!name){ alert('Give the session a name before saving.'); return; }
+    if(!(km>0)){ alert('Distance must be a number greater than 0.'); return; }
+    const type = val('type');
+    saveCustomSession(meta.weekNum, dayRowPosition(saveBtn.closest('.day-row')).index, {
+      name, detail: val('detail').trim(), type, km, hr: hrForType(type), key: form.querySelector('[data-sfield="key"]').checked
+    });
+    return;
+  }
+  const resetBtn = e.target.closest('[data-session-reset]');
+  if(resetBtn){
+    const key = resetBtn.dataset.sessionReset;
+    const meta = dayMeta[key];
+    if(!meta) return;
+    resetCustomSession(meta.weekNum, dayRowPosition(resetBtn.closest('.day-row')).index);
+    return;
+  }
 });
 panelsEl.addEventListener('input', (e)=>{
   const el = e.target;
