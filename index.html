@@ -494,6 +494,19 @@
 
   <div id="panels"></div>
 
+  <div class="pulse-card">
+    <div class="pulse-head">
+      <h2>Weekly volume <span style="color:var(--text-faint); font-weight:400; text-transform:none; letter-spacing:0;">— incl. w-up/c-down on KEY days</span></h2>
+      <div class="pulse-legend">
+        <span><i style="background:var(--z-lt1)"></i>build</span>
+        <span><i style="background:var(--z-power)"></i>taper</span>
+        <span><i style="background:var(--gold)"></i>race week</span>
+        <span><i style="background:var(--z-lt2)"></i>actual logged</span>
+      </div>
+    </div>
+    <svg id="sparkline" viewBox="0 0 720 170" preserveAspectRatio="none"></svg>
+  </div>
+
   <div class="info-grid">
     <div class="info-card">
       <h2>Race day <span class="snap" id="raceDaySnap"></span></h2>
@@ -518,19 +531,6 @@
       <div class="info-row"><span class="k">HRV baseline</span><span class="v" id="tsHrvBaseline">67 ms</span></div>
       <div class="info-note">Static snapshot pulled from COROS on 7 Aug 2026, three days before Week 1 &mdash; this page can't call your watch live. Ask Claude to pull a fresh read before Build/Peak weeks or race week.</div>
     </div>
-  </div>
-
-  <div class="pulse-card">
-    <div class="pulse-head">
-      <h2>Weekly volume <span style="color:var(--text-faint); font-weight:400; text-transform:none; letter-spacing:0;">— incl. w-up/c-down on KEY days</span></h2>
-      <div class="pulse-legend">
-        <span><i style="background:var(--z-lt1)"></i>build</span>
-        <span><i style="background:var(--z-power)"></i>taper</span>
-        <span><i style="background:var(--gold)"></i>race week</span>
-        <span><i style="background:var(--z-lt2)"></i>actual logged</span>
-      </div>
-    </div>
-    <svg id="sparkline" viewBox="0 0 720 170" preserveAspectRatio="none"></svg>
   </div>
 
   <div class="calc-card">
