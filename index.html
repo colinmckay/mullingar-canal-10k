@@ -2081,6 +2081,10 @@ importLogInput.addEventListener('change', ()=>{
     weeks.forEach(w=>{ applyWeekOrder(w); renderDayList(w); });
     renderStatStrip();
     refreshAllDayUI();
+    // Guarded: refreshWeekNotes only exists once the weekly-reflection-note feature
+    // is also on this branch — without the guard, importing here (before that
+    // feature lands) would throw and abort partway through the refresh above.
+    if(typeof refreshWeekNotes === 'function') refreshWeekNotes();
     importLogInput.value = '';
   };
   reader.onerror = () => alert("Couldn't read that file.");
