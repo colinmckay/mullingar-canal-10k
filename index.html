@@ -290,6 +290,21 @@
     border-bottom:1px solid var(--line-soft);
   }
   .day-row:last-child{border-bottom:none;}
+  .day-row.is-today{
+    background:rgba(63,179,123,.06);
+    border-radius:8px;
+    margin:2px -4px;
+    padding:14px 8px;
+    box-shadow:inset 3px 0 0 var(--z-lt2);
+  }
+  .today-badge{
+    font-family:'JetBrains Mono',monospace;
+    font-size:9px; letter-spacing:.08em;
+    border:1px solid var(--z-lt2);
+    color:var(--z-lt2);
+    padding:2px 6px;
+    border-radius:4px;
+  }
   .day-date{text-align:left;}
   .day-date .dnum{font-family:'Big Shoulders Display',sans-serif; font-weight:700; font-size:22px; line-height:1;}
   .day-date .dow{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-faint); letter-spacing:.06em;}
@@ -889,6 +904,9 @@ renderStatStrip();
 
 const raceDate = new Date(PLAN_CONFIG.raceDateISO+'T00:00:00');
 const now = new Date();
+// Local calendar date, not UTC — "today" should match the day the user is
+// actually looking at the plan from, same as the date on their phone.
+const todayKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
 const diffDays = Math.ceil((raceDate - now)/86400000);
 const cdEl = document.getElementById('countdownStat');
 if(diffDays > 0){
@@ -1806,7 +1824,7 @@ function renderDayList(w){
     dayMeta[dateKey] = { type: day.type, adjustedKm: adjustedDayKm(day), isRace: (day.type==='race' || day.type==='raceday'), weekNum: w.num };
 
     const row = document.createElement('div');
-    row.className = 'day-row' + (day.type==='raceday' ? ' raceday' : '');
+    row.className = 'day-row' + (day.type==='raceday' ? ' raceday' : '') + (dateKey===todayKey ? ' is-today' : '');
     const hrText = day.type==='raceday' ? `goal ${PLAN_CONFIG.goalTimeStr}` : (day.hr==='pace' ? 'race effort' : day.hr+' bpm');
     const paceText = (day.type==='race' || day.type==='raceday')
       ? `≈${GOAL_PACE_STR} /km`
@@ -1825,6 +1843,7 @@ function renderDayList(w){
         <span class="day-detail">${day.detail}</span>
         ${day.key ? '<span class="key-badge">KEY</span>' : ''}
         ${day.type==='raceday' ? '<span class="key-badge">RACE DAY</span>' : ''}
+        ${dateKey===todayKey ? '<span class="today-badge">TODAY</span>' : ''}
         <span class="niggle-badge" data-niggle-badge="${dateKey}">&#9888; niggle</span>
         <div class="actual-summary" data-summary="${dateKey}"></div>
       </div>
