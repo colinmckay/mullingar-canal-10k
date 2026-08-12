@@ -512,6 +512,7 @@
       <h2>Race day <span class="snap" id="raceDaySnap"></span></h2>
       <div class="info-row"><span class="k">Event</span><span class="v" id="raceEvent"></span></div>
       <div class="info-row"><span class="k">Location</span><span class="v" id="raceLocation"></span></div>
+      <div class="info-row"><span class="k">Drive from Trim</span><span class="v" id="raceDriveTime"></span></div>
       <div class="info-row"><span class="k">Timing / organiser</span><span class="v" id="raceOrganiser"></span></div>
       <div class="info-row"><span class="k">Course</span><span class="v" id="raceCourse"></span></div>
       <div class="info-row"><span class="k">Start time</span><span class="v" id="raceStartTime"></span></div>
@@ -598,6 +599,7 @@ const PLAN_CONFIG = {
 
   event: 'Mullingar Canal 5K & 10K',
   location: 'Mullingar Harbour, Co. Westmeath',
+  driveFromTrim: '~45 min (48 km), normal traffic',
   organiser: 'JustRuns Events',
   course: 'Flat towpath',
   startTime: '11:00 AM',
@@ -820,6 +822,7 @@ function applyPlanConfig(){
   document.getElementById('raceDaySnap').textContent = PLAN_CONFIG.raceDateLabel;
   document.getElementById('raceEvent').textContent = PLAN_CONFIG.event;
   document.getElementById('raceLocation').textContent = PLAN_CONFIG.location;
+  document.getElementById('raceDriveTime').textContent = PLAN_CONFIG.driveFromTrim;
   document.getElementById('raceOrganiser').textContent = PLAN_CONFIG.organiser;
   document.getElementById('raceCourse').textContent = PLAN_CONFIG.course;
   document.getElementById('raceStartTime').textContent = PLAN_CONFIG.startTime;
