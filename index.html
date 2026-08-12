@@ -446,6 +446,9 @@
     <div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">Cloud sync not configured yet — log is saved on this device only.</span></div>
     <div style="display:flex; gap:8px;">
       <button class="sync-btn" id="calendarBtn">Download calendar (.ics)</button>
+      <button class="sync-btn" id="exportLogBtn">Export log (.json)</button>
+      <button class="sync-btn" id="importLogBtn">Import log (.json)</button>
+      <input type="file" id="importLogInput" accept="application/json" style="display:none;">
       <button class="sync-btn" id="syncBtn" style="display:none;">Sign in with Google</button>
     </div>
   </div>
@@ -2040,6 +2043,48 @@ document.getElementById('calendarBtn').addEventListener('click', ()=>{
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+});
+
+// ---------- manual log export/import (backup independent of cloud sync) ----------
+document.getElementById('exportLogBtn').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(runLog, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = PLAN_CONFIG.slug + '-log-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+const importLogInput = document.getElementById('importLogInput');
+document.getElementById('importLogBtn').addEventListener('click', ()=> importLogInput.click());
+importLogInput.addEventListener('change', ()=>{
+  const file = importLogInput.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try{ parsed = JSON.parse(String(reader.result)); }
+    catch(err){ alert("Couldn't read that file — it doesn't look like valid JSON."); importLogInput.value=''; return; }
+    if(typeof parsed !== 'object' || parsed===null || Array.isArray(parsed)){
+      alert("That doesn't look like a log export from this app.");
+      importLogInput.value = '';
+      return;
+    }
+    if(!confirm('This replaces everything currently logged on this device (and your synced copy, if signed in) with the contents of this file. Continue?')){
+      importLogInput.value = '';
+      return;
+    }
+    runLog = parsed;
+    saveLog();
+    weeks.forEach(w=>{ applyWeekOrder(w); renderDayList(w); });
+    renderStatStrip();
+    refreshAllDayUI();
+    importLogInput.value = '';
+  };
+  reader.onerror = () => alert("Couldn't read that file.");
+  reader.readAsText(file);
 });
 
 // ============================================================================
