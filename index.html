@@ -443,6 +443,12 @@
     font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:2px 7px; border-radius:6px; cursor:pointer;
   }
   .gpx-status button:hover{color:var(--z-race); border-color:var(--z-race);}
+  .gpx-charts{display:none; grid-column:1 / -1; gap:14px; flex-wrap:wrap; margin-top:6px;}
+  .gpx-charts.open{display:flex;}
+  .gpx-chart{flex:1 1 300px; min-width:260px;}
+  .gpx-chart-title{font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-bottom:4px;}
+  .gpx-chart-svg{width:100%; height:120px; display:block;}
+  .gpx-chart-empty{font-size:11px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;}
 
   footer{
     margin-top:36px;
@@ -1233,26 +1239,230 @@ function parseGPX(xmlText){
   if(trkpts.length < 2) return null;
   let distM = 0, elevGainM = 0;
   let prevLat=null, prevLon=null, prevEle=null;
+  // Per-point series (cumulative distance/elevation/time), kept alongside the summary
+  // stats below so charts (elevation profile, pace splits) can be built from it without
+  // re-walking the trackpoints — callers that only need the summary just ignore it.
+  const points = [];
   trkpts.forEach(pt=>{
     const lat = parseFloat(pt.getAttribute('lat'));
     const lon = parseFloat(pt.getAttribute('lon'));
     const eleEl = pt.getElementsByTagName('ele')[0];
     const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+    const tEl = pt.getElementsByTagName('time')[0];
+    const t = tEl ? new Date(tEl.textContent).getTime() : null;
     if(prevLat!=null && !isNaN(lat) && !isNaN(lon)){
       distM += haversineM(prevLat, prevLon, lat, lon);
       if(ele!=null && prevEle!=null && !isNaN(ele) && ele>prevEle) elevGainM += (ele-prevEle);
     }
     if(!isNaN(lat) && !isNaN(lon)){ prevLat=lat; prevLon=lon; }
     if(ele!=null && !isNaN(ele)) prevEle=ele;
+    points.push({
+      distKm: distM/1000,
+      ele: (ele!=null && !isNaN(ele)) ? ele : null,
+      t: (t!=null && !isNaN(t)) ? t : null
+    });
   });
-  const times = trkpts.map(pt=>{
-    const t = pt.getElementsByTagName('time')[0];
-    return t ? new Date(t.textContent).getTime() : null;
-  }).filter(t=>t!=null && !isNaN(t));
+  const times = points.map(p=>p.t).filter(t=>t!=null);
   const durationSec = times.length>=2 ? (Math.max(...times)-Math.min(...times))/1000 : null;
   if(distM<=0) return null;
-  return { distanceKm: distM/1000, durationSec, elevGainM: Math.round(elevGainM) };
+  return { distanceKm: distM/1000, durationSec, elevGainM: Math.round(elevGainM), points };
 }
+
+// ---------- GPX charts (elevation profile + pace-per-km splits) ----------
+// Re-parses the raw file from gpxStore on demand rather than persisting the
+// per-point series anywhere — gpxStore is already local-only (see the note by
+// its declaration), so there's nothing extra to keep in sync, and re-parsing
+// a single file on click is cheap.
+function interpolateTimeAtDistance(points, targetKm){
+  for(let i=1;i<points.length;i++){
+    if(points[i].distKm>=targetKm && points[i].t!=null){
+      let j=i-1;
+      while(j>=0 && points[j].t==null) j--;
+      if(j<0) return points[i].t;
+      const d0=points[j].distKm, d1=points[i].distKm, t0=points[j].t, t1=points[i].t;
+      if(d1===d0) return t1;
+      return t0 + ((targetKm-d0)/(d1-d0))*(t1-t0);
+    }
+  }
+  return null;
+}
+function computeKmSplits(points){
+  const withTime = points.filter(p=>p.t!=null);
+  if(withTime.length<2) return [];
+  const totalKm = points[points.length-1].distKm;
+  const splits = [];
+  let prevBoundaryTime = withTime[0].t;
+  const wholeKm = Math.floor(totalKm);
+  for(let k=1;k<=wholeKm;k++){
+    const tAtK = interpolateTimeAtDistance(points, k);
+    if(tAtK==null) break;
+    splits.push({ km: 1, sec: (tAtK-prevBoundaryTime)/1000 });
+    prevBoundaryTime = tAtK;
+  }
+  const remainder = totalKm - wholeKm;
+  if(remainder > 0.05){
+    const endT = withTime[withTime.length-1].t;
+    splits.push({ km: remainder, sec: (endT-prevBoundaryTime)/1000, partial:true });
+  }
+  return splits.filter(s=>s.sec>0);
+}
+function elevationSeries(points, maxPoints){
+  const withEle = points.filter(p=>p.ele!=null);
+  if(withEle.length<2) return [];
+  if(withEle.length<=maxPoints) return withEle;
+  const stride = Math.ceil(withEle.length/maxPoints);
+  const sampled = [];
+  for(let i=0;i<withEle.length;i+=stride) sampled.push(withEle[i]);
+  if(sampled[sampled.length-1]!==withEle[withEle.length-1]) sampled.push(withEle[withEle.length-1]);
+  return sampled;
+}
+function gpxChartWrap(titleText, svgEl){
+  const wrap = document.createElement('div');
+  wrap.className = 'gpx-chart';
+  const title = document.createElement('div');
+  title.className = 'gpx-chart-title';
+  title.textContent = titleText;
+  wrap.appendChild(title);
+  wrap.appendChild(svgEl);
+  return wrap;
+}
+function gpxChartEmpty(text){
+  const div = document.createElement('div');
+  div.className = 'gpx-chart-empty';
+  div.textContent = text;
+  return div;
+}
+function buildElevationSVG(elevPts){
+  const W=300,H=120, padL=4,padR=4,padT=14,padB=16;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const totalKm = elevPts[elevPts.length-1].distKm || 1;
+  const eles = elevPts.map(p=>p.ele);
+  const minE = Math.min(...eles), maxE = Math.max(...eles);
+  const pad = Math.max(2,(maxE-minE)*0.1);
+  const minV = minE-pad, maxV = maxE+pad;
+  const xFor = km => padL + (km/totalKm)*plotW;
+  const yFor = e => padT + (1-(e-minV)/((maxV-minV)||1))*plotH;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('preserveAspectRatio','none');
+  svg.setAttribute('class','gpx-chart-svg');
+
+  let lineD = '';
+  elevPts.forEach((p,idx)=>{
+    lineD += (idx===0?'M':'L') + xFor(p.distKm).toFixed(1)+','+yFor(p.ele).toFixed(1)+' ';
+  });
+  const areaD = 'M'+xFor(0).toFixed(1)+','+(padT+plotH).toFixed(1)+' '+lineD.slice(1)+
+    'L'+xFor(totalKm).toFixed(1)+','+(padT+plotH).toFixed(1)+' Z';
+
+  const area = document.createElementNS('http://www.w3.org/2000/svg','path');
+  area.setAttribute('d', areaD);
+  area.setAttribute('fill', 'var(--accent)');
+  area.setAttribute('opacity', '0.18');
+  area.setAttribute('stroke', 'none');
+  svg.appendChild(area);
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg','path');
+  line.setAttribute('d', lineD);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', 'var(--accent-contrast)');
+  line.setAttribute('stroke-width', '1.5');
+  svg.appendChild(line);
+
+  const maxLbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+  maxLbl.setAttribute('x', padL); maxLbl.setAttribute('y', Math.max(9,yFor(maxE)-3));
+  maxLbl.setAttribute('class','spark-label');
+  maxLbl.textContent = Math.round(maxE)+'m';
+  svg.appendChild(maxLbl);
+
+  const minLbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+  minLbl.setAttribute('x', padL); minLbl.setAttribute('y', H-4);
+  minLbl.setAttribute('class','spark-label');
+  minLbl.textContent = Math.round(minE)+'m';
+  svg.appendChild(minLbl);
+
+  const distLbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+  distLbl.setAttribute('x', padL+plotW); distLbl.setAttribute('y', H-4);
+  distLbl.setAttribute('text-anchor','end'); distLbl.setAttribute('class','spark-label');
+  distLbl.textContent = fmtKm(totalKm)+' km';
+  svg.appendChild(distLbl);
+
+  return svg;
+}
+function buildSplitsSVG(splits){
+  const W=300,H=120, padL=4,padR=4,padT=18,padB=16;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const paces = splits.map(s=>s.sec/s.km);
+  const minP = Math.min(...paces), maxP = Math.max(...paces);
+  const pad = Math.max(1,(maxP-minP)*0.2);
+  const minV = Math.max(0,minP-pad), maxV = maxP+pad;
+  const n = splits.length;
+  const barGap = 4;
+  const barW = (plotW - barGap*(n-1))/n;
+  const yFor = v => padT + (1-(v-minV)/((maxV-minV)||1))*plotH;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('preserveAspectRatio','none');
+  svg.setAttribute('class','gpx-chart-svg');
+
+  splits.forEach((s,i)=>{
+    const pace = s.sec/s.km;
+    const x = padL + i*(barW+barGap);
+    const y = yFor(pace);
+    const bar = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    bar.setAttribute('x',x.toFixed(1)); bar.setAttribute('y',y.toFixed(1));
+    bar.setAttribute('width',barW.toFixed(1)); bar.setAttribute('height',(padT+plotH-y).toFixed(1));
+    bar.setAttribute('fill', s.partial ? 'var(--z-recovery)' : 'var(--accent)');
+    bar.setAttribute('rx','2');
+    svg.appendChild(bar);
+
+    if(n<=15){
+      const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+      lbl.setAttribute('x',(x+barW/2).toFixed(1)); lbl.setAttribute('y',Math.max(9,y-4));
+      lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('class','spark-label');
+      lbl.style.fill = 'var(--accent-contrast)';
+      lbl.textContent = fmtPace(pace);
+      svg.appendChild(lbl);
+    }
+
+    const kmLbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    kmLbl.setAttribute('x',(x+barW/2).toFixed(1)); kmLbl.setAttribute('y',H-4);
+    kmLbl.setAttribute('text-anchor','middle'); kmLbl.setAttribute('class','spark-label');
+    kmLbl.textContent = s.partial ? s.km.toFixed(1) : String(i+1);
+    svg.appendChild(kmLbl);
+  });
+
+  return svg;
+}
+function renderGpxCharts(key){
+  const panel = document.querySelector('.gpx-charts[data-gpx-charts="'+key+'"]');
+  if(!panel) return;
+  const text = gpxStore[key];
+  panel.innerHTML = '';
+  if(!text){
+    panel.appendChild(gpxChartEmpty("GPX file isn't available on this device — it stays local to whichever device you uploaded it from."));
+    return;
+  }
+  const parsed = parseGPX(text);
+  if(!parsed || !parsed.points || parsed.points.length<2){
+    panel.appendChild(gpxChartEmpty("Couldn't read track data from this file."));
+    return;
+  }
+  const elevPts = elevationSeries(parsed.points, 150);
+  if(elevPts.length>=2){
+    panel.appendChild(gpxChartWrap('Elevation profile', buildElevationSVG(elevPts)));
+  } else {
+    panel.appendChild(gpxChartWrap('Elevation profile', gpxChartEmpty('No elevation data in this file.')));
+  }
+  const splits = computeKmSplits(parsed.points);
+  if(splits.length>=1){
+    panel.appendChild(gpxChartWrap('Pace per km', buildSplitsSVG(splits)));
+  } else {
+    panel.appendChild(gpxChartWrap('Pace per km', gpxChartEmpty('No timestamped points in this file.')));
+  }
+}
+
 function handleGpxUpload(key, file){
   if(!file) return;
   const reader = new FileReader();
@@ -1314,9 +1524,14 @@ function refreshGpxStatus(key){
   const el = document.querySelector('.gpx-status[data-gpx-status="'+key+'"]');
   if(!el) return;
   const entry = getEntry(key);
-  if(!entry.gpxFileName){ el.classList.remove('show'); el.innerHTML = ''; return; }
+  const chartsEl = document.querySelector('.gpx-charts[data-gpx-charts="'+key+'"]');
+  if(!entry.gpxFileName){
+    el.classList.remove('show'); el.innerHTML = '';
+    if(chartsEl){ chartsEl.classList.remove('open'); chartsEl.innerHTML = ''; }
+    return;
+  }
   const elevPart = entry.gpxElevGainM ? ` · +${entry.gpxElevGainM} m elev` : '';
-  el.innerHTML = `&#128206; ${entry.gpxFileName}${elevPart} <button type="button" data-gpx-download="${key}">download</button> <button type="button" data-gpx-remove="${key}">remove</button>`;
+  el.innerHTML = `&#128206; ${entry.gpxFileName}${elevPart} <button type="button" data-gpx-download="${key}">download</button> <button type="button" data-gpx-charts="${key}">charts</button> <button type="button" data-gpx-remove="${key}">remove</button>`;
   el.classList.add('show');
 }
 
@@ -2058,6 +2273,7 @@ function renderDayList(w){
         <div class="log-field note"><label>Notes</label><input type="text" placeholder="how did it feel?" data-field="note" data-key="${dateKey}"></div>
         <div class="log-field note"><label>Niggle note</label><input type="text" placeholder="what, where, how bad?" data-field="niggleNote" data-key="${dateKey}"></div>
         <div class="gpx-status" data-gpx-status="${dateKey}"></div>
+        <div class="gpx-charts" data-gpx-charts="${dateKey}"></div>
       </div>
     `;
     const setSVal = (field, val) => { const el = row.querySelector('[data-sfield="'+field+'"]'); if(el) el.value = val; };
@@ -2089,6 +2305,17 @@ panelsEl.addEventListener('click', (e)=>{
   if(dl){ downloadGpx(dl.dataset.gpxDownload); return; }
   const rm = e.target.closest('[data-gpx-remove]');
   if(rm){ removeGpx(rm.dataset.gpxRemove); return; }
+  const gc = e.target.closest('[data-gpx-charts]');
+  if(gc){
+    const key = gc.dataset.gpxCharts;
+    const panel = document.querySelector('.gpx-charts[data-gpx-charts="'+key+'"]');
+    if(panel){
+      const opening = !panel.classList.contains('open');
+      panel.classList.toggle('open');
+      if(opening) renderGpxCharts(key);
+    }
+    return;
+  }
   const editBtn = e.target.closest('.edit-session-btn');
   if(editBtn){
     if(editBtn.dataset.editDisabled==='true') return;
