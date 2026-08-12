@@ -522,6 +522,17 @@
     <svg id="sparkline" viewBox="0 0 720 170" preserveAspectRatio="none"></svg>
   </div>
 
+  <div class="pulse-card" id="paceTrendCard" style="display:none;">
+    <div class="pulse-head">
+      <h2>Pace trend <span style="color:var(--text-faint); font-weight:400; text-transform:none; letter-spacing:0;">— logged pace vs. that session's target, by week</span></h2>
+      <div class="pulse-legend">
+        <span><i style="background:var(--z-lt2)"></i>at/under target</span>
+        <span><i style="background:var(--z-power)"></i>over target</span>
+      </div>
+    </div>
+    <svg id="paceSparkline" viewBox="0 0 720 170" preserveAspectRatio="none"></svg>
+  </div>
+
   <div class="info-grid">
     <div class="info-card">
       <h2>Race day <span class="snap" id="raceDaySnap"></span></h2>
@@ -1591,6 +1602,108 @@ function computeFitnessTrend(){
     const hrPctDiff = (avgHrRatio-1)*100;
     hrRatioEl.textContent = `${hrPctDiff>0?'+':''}${hrPctDiff.toFixed(1)}%${hrPctDiff<-0.05?' below target':hrPctDiff>0.05?' above target':''}`;
   }
+  renderPaceTrend();
+}
+
+// ---------- pace trend chart ----------
+// Raw pace isn't comparable across session types (a recovery jog and an LT2
+// interval have very different target paces), so this plots the same
+// actual÷target ratio computeFitnessTrend() already computes, just per week
+// instead of averaged across the whole plan — one point per week that has at
+// least one logged pace, skipping weeks with nothing logged rather than
+// drawing a misleading dip to zero.
+function weeklyPaceRatios(){
+  const byWeek = {};
+  Object.keys(dayMeta).forEach(key=>{
+    const meta = dayMeta[key];
+    if(meta.type === 'raceday') return;
+    const entry = getEntry(key);
+    const paceForBand = entry.repsPace || entry.pace;
+    if(!paceForBand) return;
+    const actualSec = parsePaceStr(paceForBand);
+    if(actualSec==null) return;
+    let targetSec;
+    if(meta.isRace){ targetSec = GOAL_PACE_SEC; }
+    else { const band = parseBand(ZONE_PACE[meta.type] || ''); if(band && band[0]!=null && band[1]!=null) targetSec = (band[0]+band[1])/2; }
+    if(!(targetSec>0)) return;
+    (byWeek[meta.weekNum] = byWeek[meta.weekNum] || []).push(actualSec/targetSec);
+  });
+  return weeks.map(w=>{
+    const arr = byWeek[w.num];
+    return (arr && arr.length) ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+  });
+}
+function renderPaceTrend(){
+  const card = document.getElementById('paceTrendCard');
+  const svg = document.getElementById('paceSparkline');
+  if(!card || !svg) return;
+  const ratios = weeklyPaceRatios();
+  const pts = ratios.map((r,i)=>({i, r})).filter(p=>p.r!=null);
+  card.style.display = pts.length ? '' : 'none';
+  if(!pts.length) return;
+
+  const W=720,H=170, padL=8,padR=8,padT=18,padB=28;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const values = pts.map(p=>p.r);
+  const minV = Math.min(1, ...values) - 0.03;
+  const maxV = Math.max(1, ...values) + 0.03;
+  const xFor = i => padL + (i/(weeks.length-1))*plotW;
+  const yFor = v => padT + (1-(v-minV)/(maxV-minV))*plotH;
+
+  svg.innerHTML = '';
+
+  const zeroLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+  zeroLine.setAttribute('x1', padL); zeroLine.setAttribute('x2', padL+plotW);
+  zeroLine.setAttribute('y1', yFor(1)); zeroLine.setAttribute('y2', yFor(1));
+  zeroLine.setAttribute('stroke', 'var(--line)'); zeroLine.setAttribute('stroke-width', '1'); zeroLine.setAttribute('stroke-dasharray', '3 3');
+  svg.appendChild(zeroLine);
+  const zeroLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
+  zeroLabel.setAttribute('x', padL); zeroLabel.setAttribute('y', yFor(1)-4);
+  zeroLabel.setAttribute('class', 'spark-label'); zeroLabel.setAttribute('text-anchor', 'start');
+  zeroLabel.textContent = 'target pace';
+  svg.appendChild(zeroLabel);
+
+  let d = '';
+  pts.forEach((p,idx)=>{ d += (idx===0?'M':'L') + xFor(p.i).toFixed(1)+','+yFor(p.r).toFixed(1)+' '; });
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke','#3A4150');
+  path.setAttribute('stroke-width','1.5');
+  svg.appendChild(path);
+
+  pts.forEach(p=>{
+    const x = xFor(p.i), y = yFor(p.r);
+    const pctDiff = (p.r-1)*100;
+    const color = p.r<=1.02 ? 'var(--z-lt2)' : 'var(--z-power)';
+
+    const vLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+    vLine.setAttribute('x1',x); vLine.setAttribute('x2',x);
+    vLine.setAttribute('y1',y); vLine.setAttribute('y2',padT+plotH+6);
+    vLine.setAttribute('stroke','#232833'); vLine.setAttribute('stroke-width','1');
+    svg.appendChild(vLine);
+
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',4);
+    c.setAttribute('fill', color);
+    c.setAttribute('stroke', '#12151A'); c.setAttribute('stroke-width','2');
+    svg.appendChild(c);
+
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('x',x); lbl.setAttribute('y', y-10);
+    lbl.setAttribute('text-anchor','middle');
+    lbl.setAttribute('class','spark-label');
+    lbl.style.fill = color;
+    lbl.textContent = `${pctDiff>0?'+':''}${pctDiff.toFixed(0)}%`;
+    svg.appendChild(lbl);
+
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',x); t.setAttribute('y', H-6);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('class','spark-label');
+    t.textContent = 'W'+weeks[p.i].num;
+    svg.appendChild(t);
+  });
 }
 
 function refreshAllDayUI(){
