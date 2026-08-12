@@ -524,6 +524,8 @@
       <h2>Weekly volume <span style="color:var(--text-faint); font-weight:400; text-transform:none; letter-spacing:0;">— incl. w-up/c-down on KEY days</span></h2>
       <div class="pulse-legend">
         <span><i style="background:var(--z-lt1)"></i>build</span>
+        <span><i style="background:var(--z-recovery)"></i>cutback</span>
+        <span><i style="background:var(--z-race)"></i>peak</span>
         <span><i style="background:var(--z-power)"></i>taper</span>
         <span><i style="background:var(--gold)"></i>race week</span>
         <span><i style="background:var(--z-lt2)"></i>actual logged</span>
@@ -902,6 +904,8 @@ function weekRangeLabel(startStr){
 function phaseColorVar(phase){
   if(phase==='Race Week') return 'var(--gold)';
   if(phase==='Taper') return 'var(--z-power)';
+  if(phase==='Peak') return 'var(--z-race)';
+  if(phase==='Cutback') return 'var(--z-recovery)';
   return 'var(--z-lt1)';
 }
 
