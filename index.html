@@ -280,6 +280,13 @@
   .week-meta{display:flex; gap:18px; flex-wrap:wrap;}
   .week-meta .m-num{font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:600;}
   .week-meta .m-lbl{font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint);}
+  .week-note{margin-top:14px; padding-top:14px; border-top:1px solid var(--line-soft);}
+  .week-note label{display:block; font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-faint); margin-bottom:6px;}
+  .week-note textarea{
+    width:100%; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--text);
+    font-family:'JetBrains Mono',monospace; font-size:12px; padding:8px 10px; resize:vertical; min-height:44px; box-sizing:border-box;
+  }
+  .week-note textarea:focus{outline:none; border-color:var(--z-lt1);}
 
   .day-row{
     display:grid;
@@ -1652,6 +1659,16 @@ function setSessionOverride(weekNum, origIdx, override){
   }
   saveLog();
 }
+function getWeekNote(weekNum){ return (runLog.__weekNote && runLog.__weekNote[weekNum]) || ''; }
+function setWeekNote(weekNum, text){
+  runLog.__weekNote = runLog.__weekNote || {};
+  if(text) runLog.__weekNote[weekNum] = text;
+  else if(runLog.__weekNote[weekNum]!=null){
+    delete runLog.__weekNote[weekNum];
+    if(Object.keys(runLog.__weekNote).length===0) delete runLog.__weekNote;
+  }
+  saveLog();
+}
 function applyWeekOrder(w){
   const overrides = getWeekOverrides(w.num);
   w.days = getWeekOrder(w.num).map(idx => overrides[idx] ? Object.assign({}, w._origDays[idx], overrides[idx]) : w._origDays[idx]);
@@ -1778,12 +1795,26 @@ weeks.forEach(w=>{
       </div>
     </div>
     <div class="day-list"></div>
+    <div class="week-note">
+      <label for="weekNote-${w.num}">Week ${w.num} reflection</label>
+      <textarea id="weekNote-${w.num}" data-weeknote="${w.num}" placeholder="How did this week go overall?" rows="2"></textarea>
+    </div>
   `;
 
   panelsEl.appendChild(panel);
   renderWeekHeadStats(w);
   renderDayList(w);
 });
+// Week notes live in the panel skeleton (built once above), not in renderDayList,
+// so they need their own populate step — also re-run after cloud sync pulls a
+// different copy or a JSON import replaces runLog wholesale.
+function refreshWeekNotes(){
+  weeks.forEach(w=>{
+    const el = document.getElementById('weekNote-'+w.num);
+    if(el) el.value = getWeekNote(w.num);
+  });
+}
+refreshWeekNotes();
 
 // Distance and the key-session flag can change when a session is customized,
 // so the week header's planned-km/key-count stats need to be recomputed —
@@ -1935,6 +1966,7 @@ panelsEl.addEventListener('click', (e)=>{
 });
 panelsEl.addEventListener('input', (e)=>{
   const el = e.target;
+  if(el.dataset && el.dataset.weeknote){ setWeekNote(el.dataset.weeknote, el.value); return; }
   if(!el.dataset || !el.dataset.field) return;
   const field = el.dataset.field;
   if(field==='pace' || field==='warmupPace' || field==='cooldownPace') return; // pace is derived from distance + time, not directly editable
@@ -2129,6 +2161,7 @@ async function setupSync(){
           // The cloud copy may carry a different session order (e.g. a swap made on
           // another device) than what's currently rendered from the pre-sync local copy.
           weeks.forEach(w=>{ applyWeekOrder(w); renderDayList(w); });
+          refreshWeekNotes();
         } else {
           // First time this account has synced — push up whatever is local.
           await fb.setDoc(fb.doc(fb.db, 'users', user.uid, 'plan', CLOUD_DOC_ID), { data: runLog, updatedAt: Date.now() });
