@@ -449,6 +449,7 @@
   .gpx-chart-title{font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-bottom:4px;}
   .gpx-chart-svg{width:100%; height:120px; display:block;}
   .gpx-chart-empty{font-size:11px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;}
+  .gpx-chart-note{flex-basis:100%; font-size:10px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-top:2px;}
 
   footer{
     margin-top:36px;
@@ -1237,13 +1238,31 @@ function parseGPX(xmlText){
   if(doc.querySelector('parsererror')) return null;
   const trkpts = Array.from(doc.getElementsByTagName('trkpt'));
   if(trkpts.length < 2) return null;
+
+  // Some watches (COROS included) embed their own device-computed cumulative distance
+  // per point via a vendor extension (e.g. gpxdata:distance) — this reflects whatever
+  // GPS+accelerometer fusion the device applied at record time, which is what Strava's
+  // own splits are actually based on. When it's present, use it instead of recomputing
+  // from raw lat/lon: naive point-to-point GPS distance measurably under/over-counts
+  // versus the device's own number. Confirmed against a real run — a Strava-exported
+  // copy of the same activity (which strips this extension) computed splits up to
+  // 16s/km slower than Strava's own splits table; the COROS-native export's
+  // device-distance field reproduced Strava's splits exactly.
+  const deviceDistRaw = trkpts.map(pt=>{
+    const el = pt.getElementsByTagNameNS('*','distance')[0];
+    const v = el ? parseFloat(el.textContent) : NaN;
+    return isNaN(v) ? null : v;
+  });
+  const useDeviceDist = deviceDistRaw.filter(v=>v!=null).length >= trkpts.length*0.9;
+
   let distM = 0, elevGainM = 0;
   let prevLat=null, prevLon=null, prevEle=null;
+  let lastDeviceDistM = 0;
   // Per-point series (cumulative distance/elevation/time), kept alongside the summary
   // stats below so charts (elevation profile, pace splits) can be built from it without
   // re-walking the trackpoints — callers that only need the summary just ignore it.
   const points = [];
-  trkpts.forEach(pt=>{
+  trkpts.forEach((pt,i)=>{
     const lat = parseFloat(pt.getAttribute('lat'));
     const lon = parseFloat(pt.getAttribute('lon'));
     const eleEl = pt.getElementsByTagName('ele')[0];
@@ -1256,16 +1275,18 @@ function parseGPX(xmlText){
     }
     if(!isNaN(lat) && !isNaN(lon)){ prevLat=lat; prevLon=lon; }
     if(ele!=null && !isNaN(ele)) prevEle=ele;
+    if(deviceDistRaw[i]!=null) lastDeviceDistM = deviceDistRaw[i];
     points.push({
-      distKm: distM/1000,
+      distKm: (useDeviceDist ? lastDeviceDistM : distM)/1000,
       ele: (ele!=null && !isNaN(ele)) ? ele : null,
       t: (t!=null && !isNaN(t)) ? t : null
     });
   });
   const times = points.map(p=>p.t).filter(t=>t!=null);
   const durationSec = times.length>=2 ? (Math.max(...times)-Math.min(...times))/1000 : null;
-  if(distM<=0) return null;
-  return { distanceKm: distM/1000, durationSec, elevGainM: Math.round(elevGainM), points };
+  const totalDistM = useDeviceDist ? lastDeviceDistM : distM;
+  if(totalDistM<=0) return null;
+  return { distanceKm: totalDistM/1000, durationSec, elevGainM: Math.round(elevGainM), points, usedDeviceDistance: useDeviceDist };
 }
 
 // ---------- GPX charts (elevation profile + pace-per-km splits) ----------
@@ -1460,6 +1481,15 @@ function renderGpxCharts(key){
     panel.appendChild(gpxChartWrap('Pace per km', buildSplitsSVG(splits)));
   } else {
     panel.appendChild(gpxChartWrap('Pace per km', gpxChartEmpty('No timestamped points in this file.')));
+  }
+  // Only caveat when we fell back to GPS-derived distance — files with a device-reported
+  // distance stream (e.g. COROS's own GPX export) reproduce the watch/Strava's own splits
+  // directly, nothing approximate about those.
+  if(!parsed.usedDeviceDistance){
+    const note = document.createElement('div');
+    note.className = 'gpx-chart-note';
+    note.textContent = 'Distance is estimated from raw GPS points in this file and may differ slightly from Strava or your watch.';
+    panel.appendChild(note);
   }
 }
 
