@@ -1965,8 +1965,22 @@ refreshWeekNotes();
 function renderWeekHeadStats(w){
   const keyCount = w.days.filter(d=>d.key).length;
   const wListed = totalKm(w), wAdjusted = adjustedTotalKm(w);
-  document.getElementById('plannedNum-'+w.num).textContent = fmtKm(wAdjusted) + ' km';
-  document.getElementById('plannedLbl-'+w.num).innerHTML = 'planned' + (wAdjusted>wListed ? ` <span class="lbl2">(${fmtKm(wListed)} listed)</span>` : '');
+  // For the week that's actually in progress, "planned" as a flat week total isn't a fair
+  // comparison against "actual" (which can only reflect days that have happened so far) —
+  // e.g. comparing a full week's planned km against only Mon-Wed of actual makes the plan
+  // look wildly ahead. Show the plan's cumulative total through today instead, for that
+  // week only; past/future weeks keep the plain full-week total since "through today"
+  // isn't meaningful for a week that hasn't started or already finished.
+  const todayIdx = w.days.findIndex((d,i)=>dateKeyFor(w.start,i)===todayKey);
+  if(todayIdx>=0){
+    let throughToday = 0;
+    for(let i=0;i<=todayIdx;i++) throughToday += adjustedDayKm(w.days[i]);
+    document.getElementById('plannedNum-'+w.num).textContent = fmtKm(throughToday) + ' km';
+    document.getElementById('plannedLbl-'+w.num).innerHTML = `planned thru today<span class="lbl2">${fmtKm(wAdjusted)} km week total</span>`;
+  } else {
+    document.getElementById('plannedNum-'+w.num).textContent = fmtKm(wAdjusted) + ' km';
+    document.getElementById('plannedLbl-'+w.num).innerHTML = 'planned' + (wAdjusted>wListed ? ` <span class="lbl2">(${fmtKm(wListed)} listed)</span>` : '');
+  }
   document.getElementById('keyCount-'+w.num).textContent = keyCount;
   document.getElementById('keyLbl-'+w.num).textContent = 'key session' + (keyCount===1?'':'s');
 }
