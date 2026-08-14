@@ -901,6 +901,11 @@ function totalKm(w){ return w.days.reduce((s,d)=>s+d.km,0); }
 function adjustedDayKm(day){ return day.key ? day.km + BUFFER_KM : day.km; }
 function adjustedTotalKm(w){ return w.days.reduce((s,d)=>s+adjustedDayKm(d),0); }
 function fmtKm(n){ return (Math.round(n*10)/10).toString(); }
+// For summing a user's own precisely-entered km values back to them (e.g. dist +
+// warm-up + cool-down) — fmtKm's 1-decimal rounding can visibly undercut a total
+// that's exact to 2 decimals (2.40 + 2.63 + 0.60 = 5.63 renders as "5.6" via fmtKm,
+// reading as wrong even though the underlying sum is correct).
+function fmtKmPrecise(n){ return (Math.round(n*100)/100).toString(); }
 
 function weekRangeLabel(startStr){
   const MS=86400000;
@@ -1692,7 +1697,7 @@ function updateActualSummary(key){
   if(entry.dist) parts.push(entry.dist + ' km');
   if(parseFloat(entry.warmupKm)>0) parts.push('+' + entry.warmupKm + ' km w-up');
   if(parseFloat(entry.cooldownKm)>0) parts.push('+' + entry.cooldownKm + ' km c-down');
-  if(hasWarmupOrCooldown) parts.push('= ' + fmtKm(actualDayKm(entry)) + ' km total');
+  if(hasWarmupOrCooldown) parts.push('= ' + fmtKmPrecise(actualDayKm(entry)) + ' km total');
   // Total time has to include w-up/c-down time too — otherwise this line reads as
   // "X km total in Y" where Y was only ever the main session's time, not the total.
   const totalTimeSec = actualDayTimeSec(entry);
