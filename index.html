@@ -1715,10 +1715,14 @@ function updateActualSummary(key){
   el.style.display = 'block';
 }
 function updateProgress(){
-  let doneKm = 0, doneCount = 0, totalCount = 0;
+  // Actual logged km, not planned km gated on the "done" checkbox — a day with real
+  // distance entered but not ticked done was invisible here even though its km already
+  // counts in the "actual" stats elsewhere, which undercounted total progress.
+  const doneKm = actualGrandKm();
+  let doneCount = 0, totalCount = 0;
   Object.keys(dayMeta).forEach(key=>{
     totalCount++;
-    if(getEntry(key).done){ doneKm += dayMeta[key].adjustedKm; doneCount++; }
+    if(actualDayKm(getEntry(key))>0) doneCount++;
   });
   const pct = grandTotal>0 ? Math.min(100,(doneKm/grandTotal)*100) : 0;
   document.getElementById('progressFill').style.width = pct.toFixed(1)+'%';
