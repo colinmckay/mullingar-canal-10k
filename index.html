@@ -2085,6 +2085,10 @@ function swapDaySessions(weekNum, i, j){
   const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
   setWeekOrder(weekNum, order);
   applyWeekOrder(w);
+  // Swapping doesn't change the week TOTAL (same 7 sessions either way), but "planned thru
+  // today" is a partial sum up to today's position — which day now holds which session
+  // does change that, so it needs recomputing same as a custom-session edit does.
+  renderWeekHeadStats(w);
   renderDayList(w);
   refreshAllDayUI(); // also covers updateVolumeStats/generateCoachNote/computeFitnessTrend
 }
